@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Crop Journal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #F6F7F2; --line: #E4E7DD; --text: #1B1F16; --muted: #6B7364;
+    --accent: #5FBF3C; --accent-dark: #3B8A24; --accent-bg: #E8F5DE; --track: #EDEFE6;
+    --dark: #12160F; --dark-input: #1A2013; --dark-line: #2C3324; --dark-text: #F5F7F1; --dark-muted: #9AA48F;
+    --amber: #B7791F; --amber-bg: #FBF0DA; --red: #B23A2E; --red-bg: #FBEAE7; --red-soft: #E8907F;
+    --font-display: 'Plus Jakarta Sans', sans-serif;
+    --font-body: 'Inter', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+  input, select, button { font-family: var(--font-body); }
+  input:focus, select:focus { outline: none; border-color: var(--accent) !important; }
+  select { appearance: none; }
+  button { cursor: pointer; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 11px 18px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    padding: 4px 11px; border-radius: 20px; }
+  .card { background: #FFFFFF; border: 1px solid var(--line); border-radius: 12px; }
+  .field-label { display: block; font-size: 11.5px; font-weight: 600; color: var(--muted);
+    margin: 14px 0 6px; letter-spacing: 0.3px; text-transform: uppercase; }
+  .input { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 9px;
+    border: 1px solid var(--line); background: #FFFFFF; color: var(--text); font-size: 14px; }
+  .dark-input { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 9px;
+    border: 1px solid var(--dark-line); background: var(--dark-input); color: var(--dark-text); font-size: 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+const CROPS = ["Wheat","Rice","Sugarcane","Cotton","Maize (Corn)","Mustard","Potato","Soybean",
+  "Groundnut","Chickpea (Gram)","Pigeon Pea (Arhar)","Tomato","Onion","Other"];
+
+const HEALTH_META = {
+  healthy:  { color: "#3B8A24", bg: "var(--accent-bg)", label: "Healthy", score: 90, icon: "check" },
+  stressed: { color: "var(--amber)", bg: "var(--amber-bg)", label: "Stressed", score: 58, icon: "drop" },
+  diseased: { color: "var(--red)", bg: "var(--red-bg)", label: "Issue detected", score: 28, icon: "bug" },
+  unclear:  { color: "var(--muted)", bg: "var(--track)", label: "Unclear", score: 50, icon: "help" },
+};
+
+function ICON(name, size, color) {
+  size = size || 16; color = color || "currentColor";
+  const s = `width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+  const paths = {
+    leaf: `<path d="M11 20A7 7 0 0 1 4 13c0-4 4-8 9-9 5 1 9 5 9 9a7 7 0 0 1-7 7Z"/><path d="M11 20 20 4"/>`,
+    camera: `<path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="14" r="3"/>`,
+    plus: `<path d="M12 5v14M5 12h14"/>`,
+    chevronDown: `<path d="M6 9l6 6 6-6"/>`,
+    trash: `<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>`,
+    alert: `<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.5" fill="${color}"/>`,
+    check: `<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>`,
+    drop: `<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/>`,
+    bug: `<circle cx="12" cy="13" r="6"/><path d="M9 3l1 3M15 3l-1 3M4 13h3M17 13h3M6 20l3-3M18 20l-3-3"/>`,
+    help: `<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1-1.5 2.2"/><circle cx="12" cy="17" r="0.5" fill="${color}"/>`,
+    languages: `<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18Z"/>`,
+    cloud: `<path d="M7 18a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.5A4 4 0 0 1 17 18H7Z"/>`,
+    cpu: `<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>`,
+    scan: `<path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3"/><path d="M4 12h16"/>`,
+    sprout: `<path d="M7 20h10M12 20v-8"/><path d="M12 12C7 12 5 8 5 4c4 0 7 2 7 6M12 12c5 0 7-4 7-8-4 0-7 2-7 6"/>`,
+    loader: `<path d="M12 3a9 9 0 1 0 9 9"/>`,
+  };
+  return `<svg ${s}>${paths[name] || ""}</svg>`;
+}
+
+function daysBetween(a, b) {
+  const d = Math.round((new Date(b) - new Date(a)) / 86400000);
+  return d < 0 ? 0 : d;
+}
+
+function fileToResizedJpeg(file, maxDim, quality) {
+  maxDim = maxDim || 900; quality = quality || 0.72;
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read the file."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Could not read that image."));
+      img.onload = () => {
+        let width = img.width, height = img.height;
+        if (width > height && width > maxDim) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else if (height > maxDim) { width = Math.round(width * maxDim / height); height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality).split(",")[1]);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Calls our own server, which holds the Gemini API key.
+async function analyzePhoto(crop, dayCount, language, base64) {
+  const response = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ crop, dayCount, language, base64 }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || `Analysis request failed (${response.status}).`);
+  }
+  return response.json();
+}
+
+// ---------- state ----------
+const state = {
+  fields: [], entriesByField: {}, activeFieldId: null,
+  showNewField: false, switcherOpen: false, language: "English",
+  uploading: false, uploadError: "", pendingPreview: null, loaded: false,
+};
+
+async function persistFields(list) {
+  state.fields = list;
+  localStorage.setItem("fields-list", JSON.stringify(list));
+}
+async function persistEntries(fieldId, list) {
+  state.entriesByField[fieldId] = list;
+  localStorage.setItem(`entries:${fieldId}`, JSON.stringify(list));
+}
+
+async function init() {
+  try {
+    const raw = localStorage.getItem("fields-list");
+    const list = raw ? JSON.parse(raw) : [];
+    state.fields = list;
+    if (list.length) {
+      state.activeFieldId = list[0].id;
+      for (const f of list) {
+        const er = localStorage.getItem(`entries:${f.id}`);
+        state.entriesByField[f.id] = er ? JSON.parse(er) : [];
+      }
+    }
+  } catch {}
+  state.loaded = true;
+  render();
+}
+
+async function createField(field) {
+  await persistFields([field, ...state.fields]);
+  state.entriesByField[field.id] = [];
+  state.activeFieldId = field.id;
+  state.showNewField = false;
+  render();
+}
+
+async function deleteField(id) {
+  const list = state.fields.filter(f => f.id !== id);
+  await persistFields(list);
+  delete state.entriesByField[id];
+  if (state.activeFieldId === id) state.activeFieldId = list.length ? list[0].id : null;
+  render();
+}
+
+async function handleFile(file) {
+  const activeField = state.fields.find(f => f.id === state.activeFieldId);
+  if (!file || !activeField) return;
+  state.uploadError = "";
+  try {
+    const base64 = await fileToResizedJpeg(file);
+    state.pendingPreview = base64;
+    state.uploading = true;
+    render();
+    const dayCount = daysBetween(activeField.sowingDate, new Date());
+    const analysis = await analyzePhoto(activeField.crop, dayCount, state.language, base64);
+    const entry = { id: `entry_${Date.now()}`, date: new Date().toISOString(), dayCount, image: base64, analysis };
+    const updated = [entry, ...(state.entriesByField[activeField.id] || [])];
+    await persistEntries(activeField.id, updated);
+  } catch (err) {
+    state.uploadError = err.message || "Something went wrong analyzing that photo. Try again.";
+  } finally {
+    state.uploading = false;
+    state.pendingPreview = null;
+    render();
+  }
+}
+
+// ---------- render ----------
+function badge(label, color, bg, iconName) {
+  return `<span class="badge" style="color:${color};background:${bg}">${iconName ? ICON(iconName, 13, color) : ""}${label}</span>`;
+}
+
+function newFieldFormHTML(showCancel) {
+  const options = CROPS.map(c => `<option value="${c}">${c}</option>`).join("");
+  const today = new Date().toISOString().slice(0, 10);
+  return `
+    <div class="card" style="background:var(--dark);border:none;border-radius:16px;padding:26px 24px;max-width:440px;margin:0 auto;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+        <div style="width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;">
+          ${ICON("sprout", 16, "#0D1206")}
+        </div>
+        <h2 style="font-family:var(--font-display);font-size:18px;margin:0;color:var(--dark-text);">New field</h2>
+      </div>
+      <label class="field-label" style="color:var(--dark-muted)">Field name (optional)</label>
+      <input id="nf-name" class="dark-input" placeholder="e.g. North plot" />
+      <label class="field-label" style="color:var(--dark-muted)">Crop</label>
+      <select id="nf-crop" class="dark-input"><option value="">Select crop</option>${options}</select>
+      <input id="nf-custom-crop" class="dark-input" style="display:none;margin-top:8px;" placeholder="Type crop name" />
+      <label class="field-label" style="color:var(--dark-muted)">Sowing date</label>
+      <input id="nf-date" type="date" class="dark-input" max="${today}" value="${today}" />
+      <p id="nf-error" style="color:#E8907F;font-size:13px;margin-top:10px;display:none;"></p>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        ${showCancel ? `<button class="btn" id="nf-cancel" style="flex:1;background:transparent;color:var(--dark-muted);border:1px solid var(--dark-line);">Cancel</button>` : ""}
+        <button class="btn" id="nf-submit" style="flex:2;background:var(--accent);color:#0D1206;">${ICON("plus", 16, "#0D1206")} Start tracking</button>
+      </div>
+    </div>`;
+}
+
+function healthScoreCardHTML(latestEntry) {
+  const meta = latestEntry ? HEALTH_META[latestEntry.analysis.health_status] : null;
+  const score = meta ? meta.score : null;
+  const signal = !meta ? "No data yet" : score >= 75 ? "Good signal" : score >= 50 ? "Watch closely" : "Needs attention";
+  const barColor = !meta ? "var(--track)" : score >= 75 ? "var(--accent)" : score >= 50 ? "var(--amber)" : "var(--red)";
+  return `
+    <div class="card" style="padding:20px 22px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <p style="margin:0;font-size:12px;color:var(--muted);font-weight:600;">Crop health</p>
+          <p style="margin:4px 0 0;font-size:34px;font-weight:700;font-family:var(--font-display);">${score !== null ? score + "%" : "—"}</p>
+        </div>
+        ${badge(signal, meta ? meta.color : "var(--muted)", meta ? meta.bg : "var(--track)")}
+      </div>
+      <div style="height:8px;background:var(--track);border-radius:6px;margin-top:14px;overflow:hidden;">
+        <div style="height:100%;width:${score || 0}%;border-radius:6px;background:${barColor};transition:width .4s ease;"></div>
+      </div>
+      <p style="margin:10px 0 0;font-size:12.5px;color:var(--muted);">
+        ${latestEntry ? `From your latest photo, day ${latestEntry.dayCount}` : "Upload a photo to see your first reading"}
+      </p>
+    </div>`;
+}
+
+function statCardHTML(iconName, label, value) {
+  return `
+    <div class="card" style="padding:14px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="width:34px;height:34px;border-radius:9px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        ${ICON(iconName, 16, "var(--accent-dark)")}
+      </div>
+      <div style="min-width:0;">
+        <p style="margin:0;font-size:11.5px;color:var(--muted);font-weight:600;">${label}</p>
+        <p style="margin:2px 0 0;font-size:14px;font-weight:600;font-family:var(--font-display);">${value}</p>
+      </div>
+    </div>`;
+}
+
+function entryRowHTML(entry) {
+  const meta = HEALTH_META[entry.analysis.health_status] || HEALTH_META.unclear;
+  return `
+    <div class="card" style="display:flex;gap:14px;padding:14px;margin-bottom:12px;border-color:${entry.analysis.urgent ? 'var(--red-soft)' : 'var(--line)'};">
+      <img src="data:image/jpeg;base64,${entry.image}" alt="Crop upload" style="width:84px;height:84px;object-fit:cover;border-radius:9px;flex-shrink:0;border:1px solid var(--line);" />
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+          <div>
+            <p style="margin:0;font-family:var(--font-mono);font-size:11.5px;color:var(--muted);">Day ${entry.dayCount} · ${new Date(entry.date).toLocaleDateString()}</p>
+            <p style="margin:2px 0 7px;font-family:var(--font-display);font-size:16px;font-weight:600;">${entry.analysis.growth_stage}</p>
+          </div>
+          ${entry.analysis.urgent ? badge("Urgent", "var(--red)", "var(--red-bg)", "alert") : ""}
+        </div>
+        ${badge(meta.label, meta.color, meta.bg, meta.icon)}
+        ${entry.analysis.issue_detected ? `<p style="margin:8px 0 0;font-size:13px;"><span style="color:var(--muted);font-weight:600;">Issue: </span>${entry.analysis.issue_detected}</p>` : ""}
+        <p style="margin:8px 0 0;font-size:13px;color:var(--muted);line-height:1.5;">${entry.analysis.recommendation}</p>
+      </div>
+    </div>`;
+}
+
+function render() {
+  const app = document.getElementById("app");
+  if (!state.loaded) { app.innerHTML = ""; return; }
+
+  const activeField = state.fields.find(f => f.id === state.activeFieldId) || null;
+  const activeEntries = activeField ? (state.entriesByField[activeField.id] || []) : [];
+
+  let body = "";
+
+  if (state.fields.length === 0 && !state.showNewField) {
+    body = `
+      <div style="text-align:center;">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--accent-dark);background:var(--accent-bg);padding:5px 12px;border-radius:20px;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:16px;">AI-powered crop tracking</span>
+        <h1 style="font-family:var(--font-display);font-size:30px;font-weight:800;margin:0 0 10px;line-height:1.15;">Grow smarter.<br/>Track better.</h1>
+        <p style="color:var(--muted);margin-bottom:30px;font-size:14.5px;max-width:380px;margin-left:auto;margin-right:auto;">Upload a field photo at every stage and get an instant health reading and next step.</p>
+        ${newFieldFormHTML(false)}
+      </div>`;
+  } else if (state.showNewField) {
+    body = newFieldFormHTML(true);
+  } else if (activeField) {
+    body = `
+      <div style="position:relative;margin-bottom:16px;">
+        <button id="switcher-btn" class="btn" style="width:100%;justify-content:space-between;background:#FFFFFF;border:1px solid var(--line);padding:12px 14px;">
+          <span style="display:flex;align-items:center;gap:10px;">
+            ${ICON("sprout", 16, "var(--accent-dark)")}
+            <span>${activeField.name}</span>
+            <span style="color:var(--muted);font-size:12px;font-family:var(--font-mono);">${activeField.crop} · Day ${daysBetween(activeField.sowingDate, new Date())}</span>
+          </span>
+          ${ICON("chevronDown", 16, "var(--muted)")}
+        </button>
+        ${state.switcherOpen ? `
+          <div style="position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:10;background:#FFFFFF;border:1px solid var(--line);border-radius:10px;overflow:hidden;">
+            ${state.fields.map(f => `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:${f.id === state.activeFieldId ? 'var(--accent-bg)' : 'transparent'};border-bottom:1px solid var(--line);">
+                <div class="switch-field" data-id="${f.id}" style="flex:1;font-size:13.5px;cursor:pointer;">${f.name} <span style="color:var(--muted);">· ${f.crop}</span></div>
+                <span class="delete-field" data-id="${f.id}" style="cursor:pointer;display:flex;">${ICON("trash", 14, "var(--muted)")}</span>
+              </div>`).join("")}
+            <div id="switcher-new-field" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;color:var(--accent-dark);font-size:13.5px;font-weight:600;">${ICON("plus", 14, "var(--accent-dark)")} New field</div>
+          </div>` : ""}
+      </div>
+
+      ${healthScoreCardHTML(activeEntries[0] || null)}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0;">
+        ${statCardHTML("scan", "Photos logged", activeEntries.length)}
+        ${statCardHTML("cpu", "Fields tracked", state.fields.length)}
+        ${statCardHTML("languages", "Language", state.language)}
+        ${statCardHTML("cloud", "Days since sowing", daysBetween(activeField.sowingDate, new Date()))}
+      </div>
+
+      <div style="background:var(--dark);border-radius:16px;padding:20px;text-align:center;margin-top:6px;">
+        <input id="file-input" type="file" accept="image/*" style="display:none;" />
+        ${state.uploading ? `
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+            ${state.pendingPreview ? `<img src="data:image/jpeg;base64,${state.pendingPreview}" alt="Uploading" style="width:60px;height:60px;object-fit:cover;border-radius:8px;opacity:0.6;" />` : ""}
+            <span class="spin" style="display:inline-flex;">${ICON("loader", 20, "var(--accent)")}</span>
+            <p style="font-size:13px;color:var(--dark-muted);margin:0;">Reading the photo…</p>
+          </div>` : `
+          <button id="upload-btn" class="btn" style="background:var(--accent);color:#0D1206;">${ICON("camera", 16, "#0D1206")} Add today's photo</button>`}
+        ${state.uploadError ? `<p style="color:#E8907F;font-size:13px;margin-top:12px;">${state.uploadError}</p>` : ""}
+        <p style="font-size:11.5px;color:#7A8471;margin-top:10px;margin-bottom:0;">Take the photo close, in daylight, showing a few whole plants.</p>
+      </div>
+
+      <div style="margin-top:22px;">
+        ${activeEntries.length === 0
+          ? `<p style="text-align:center;color:var(--muted);font-size:13.5px;">No photos yet for this field. Upload one to get your first reading.</p>`
+          : activeEntries.map(entryRowHTML).join("")}
+      </div>`;
+  }
+
+  app.innerHTML = `
+    <nav style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--line);">
+      <div style="display:flex;align-items:center;gap:9px;">
+        <div style="width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;">${ICON("leaf", 16, "#0D1206")}</div>
+        <span style="font-family:var(--font-display);font-weight:700;font-size:16px;">Crop Journal</span>
+      </div>
+      <button id="lang-toggle" class="btn" style="background:#FFFFFF;border:1px solid var(--line);padding:8px 14px;font-size:13px;">${ICON("languages", 14)} ${state.language}</button>
+    </nav>
+    <div style="max-width:640px;margin:0 auto;padding:28px 20px 60px;">${body}</div>`;
+
+  attachHandlers();
+}
+
+function attachHandlers() {
+  const q = (id) => document.getElementById(id);
+
+  const langBtn = q("lang-toggle");
+  if (langBtn) langBtn.onclick = () => { state.language = state.language === "English" ? "Hindi" : "English"; render(); };
+
+  const nfSubmit = q("nf-submit");
+  if (nfSubmit) {
+    const cropSelect = q("nf-crop");
+    cropSelect.onchange = () => { q("nf-custom-crop").style.display = cropSelect.value === "Other" ? "block" : "none"; };
+    nfSubmit.onclick = () => {
+      const name = q("nf-name").value.trim();
+      const crop = cropSelect.value === "Other" ? q("nf-custom-crop").value.trim() : cropSelect.value;
+      const sowingDate = q("nf-date").value;
+      const errEl = q("nf-error");
+      if (!crop) { errEl.textContent = "Choose or type a crop."; errEl.style.display = "block"; return; }
+      if (!sowingDate) { errEl.textContent = "Pick a sowing date."; errEl.style.display = "block"; return; }
+      createField({ id: `field_${Date.now()}`, name: name || crop, crop, sowingDate, createdAt: new Date().toISOString() });
+    };
+  }
+  const nfCancel = q("nf-cancel");
+  if (nfCancel) nfCancel.onclick = () => { state.showNewField = false; render(); };
+
+  const switcherBtn = q("switcher-btn");
+  if (switcherBtn) switcherBtn.onclick = () => { state.switcherOpen = !state.switcherOpen; render(); };
+
+  document.querySelectorAll(".switch-field").forEach(el => {
+    el.onclick = () => { state.activeFieldId = el.dataset.id; state.switcherOpen = false; render(); };
+  });
+  document.querySelectorAll(".delete-field").forEach(el => {
+    el.onclick = (e) => { e.stopPropagation(); deleteField(el.dataset.id); };
+  });
+  const switcherNewField = q("switcher-new-field");
+  if (switcherNewField) switcherNewField.onclick = () => { state.showNewField = true; state.switcherOpen = false; render(); };
+
+  const uploadBtn = q("upload-btn");
+  const fileInput = q("file-input");
+  if (uploadBtn && fileInput) {
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; handleFile(f); };
+  }
+}
+
+init();
+</script>
+</body>
+</html>
