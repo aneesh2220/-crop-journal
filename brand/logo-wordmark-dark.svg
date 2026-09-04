@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <g transform="translate(60 60)">
+    <rect width="360" height="360" rx="79" fill="#ffffff" fill-opacity="0.12"/>
+    <g transform="scale(5.625)">
+      <path d="M18 42c0-14 10-24 26-24 0 16-10 26-26 26z" fill="#7dd39a"/>
+      <path d="M18 44c8-8 14-14 26-26" stroke="#e0a527" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    </g>
+  </g>
+  <text x="490" y="243" fill="#ffffff" font-size="150" font-weight="700">AgroAI</text>
+  <text x="493" y="330" fill="#7dd39a" font-size="52" font-weight="500">Your smart farming companion</text>
+</svg>

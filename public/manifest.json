@@ -1,0 +1,29 @@
+{
+  "name": "AgroAI — Smart Farming Assistant",
+  "short_name": "AgroAI",
+  "description": "AI-powered farming assistant for crop health, soil analysis, weather, market prices and farm management.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0c1710",
+  "theme_color": "#143d25",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

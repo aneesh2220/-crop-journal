@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Secrets — NEVER commit these.
+# .env holds the Supabase keys and the data.gov.in API key. .env.example is
+# committed on purpose: it lists the variable names with no values.
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Deploy tooling
+.vercel/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

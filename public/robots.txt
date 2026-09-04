@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+
+# Signed-in-only areas — nothing useful for a crawler, and they just redirect to /login
+Disallow: /dashboard
+Disallow: /my-farm
+Disallow: /farm-progress
+Disallow: /tasks
+Disallow: /notifications
+Disallow: /settings
+Disallow: /reset-password
+
+Sitemap: https://agroai-five.vercel.app/sitemap.xml
