@@ -9,6 +9,12 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 import Anthropic from 'npm:@anthropic-ai/sdk@0.124.0'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
+// Kept as an automatic fallback. A borrowed or rotated Anthropic key can stop working
+// with no warning, and when it does EVERY AI feature in the app dies at once. Falling
+// back to Gemini's free tier means farmers keep getting answers instead of an error,
+// and the app silently returns to Claude the moment a valid key is in place.
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
+const GEMINI_MODEL = 'gemini-3.5-flash-lite'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -120,6 +126,62 @@ function buildMessages(body: RequestBody): Anthropic.MessageParam[] {
   return messages
 }
 
+function flatPrompt(body: RequestBody): string {
+  const history = (body.history ?? [])
+    .filter((h) => h.content?.trim())
+    .map((h) => `${h.role === 'user' ? 'Farmer' : 'AgroAI'}: ${h.content}`)
+    .join('\n')
+  return [systemPrompt(body), history && `Conversation so far:\n${history}`, userText(body)]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** Non-streaming Gemini call — the fallback path when Claude is unavailable. */
+async function callGemini(body: RequestBody, expectJson: boolean): Promise<string> {
+  if (!GEMINI_API_KEY) throw new Error('No fallback AI configured.')
+  const parts: unknown[] = [{ text: flatPrompt(body) }]
+  if (body.imageBase64) parts.push({ inlineData: { mimeType: 'image/jpeg', data: body.imageBase64 } })
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 25_000)
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts }],
+          generationConfig: { temperature: 0.6, ...(expectJson ? { responseMimeType: 'application/json' } : {}) },
+        }),
+        signal: controller.signal,
+      }
+    )
+    if (!res.ok) throw new Error(`Gemini fallback failed (${res.status})`)
+    const data = await res.json()
+    const text = data.candidates?.[0]?.content?.parts?.map((x: { text?: string }) => x.text ?? '').join('') ?? ''
+    if (!text.trim()) throw new Error('Gemini fallback returned nothing')
+    return text
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * True for failures where trying a different provider is the right move: a bad or
+ * revoked key, or the service being unreachable. A 400 from a malformed request would
+ * fail identically on Gemini, so those are not retried elsewhere.
+ */
+function shouldFallback(err: unknown): boolean {
+  return (
+    err instanceof Anthropic.AuthenticationError ||
+    err instanceof Anthropic.PermissionDeniedError ||
+    err instanceof Anthropic.RateLimitError ||
+    err instanceof Anthropic.APIConnectionError ||
+    (err instanceof Anthropic.APIError && (err.status ?? 0) >= 500)
+  )
+}
+
 /** Turns SDK errors into something a farmer can act on, without leaking key details. */
 function friendlyError(err: unknown): string {
   if (err instanceof Anthropic.AuthenticationError) {
@@ -141,6 +203,19 @@ function friendlyError(err: unknown): string {
 }
 
 /** Non-streaming call, used by the structured tasks that need a complete JSON body. */
+async function callStructured(body: RequestBody): Promise<string> {
+  if (!anthropic) return await callGemini(body, true)
+  try {
+    return await callClaude(body)
+  } catch (err) {
+    if (shouldFallback(err) && GEMINI_API_KEY) {
+      console.error('Claude unavailable, falling back to Gemini:', err instanceof Error ? err.message : err)
+      return await callGemini(body, true)
+    }
+    throw err
+  }
+}
+
 async function callClaude(body: RequestBody): Promise<string> {
   const response = await anthropic!.messages.create(
     {
@@ -183,7 +258,12 @@ function streamClaudeChat(body: RequestBody): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        const stream = anthropic!.messages.stream(
+        if (!anthropic) {
+          controller.enqueue(encoder.encode(await callGemini(body, false)))
+          controller.close()
+          return
+        }
+        const stream = anthropic.messages.stream(
           {
             model: MODEL,
             max_tokens: 2048,
@@ -214,6 +294,20 @@ function streamClaudeChat(body: RequestBody): ReadableStream<Uint8Array> {
         }
         controller.close()
       } catch (err) {
+        // Safe to switch providers here only because an auth/connection failure happens
+        // on the opening request, before any token has been written to the stream.
+        // Once text is flowing there is no way to retract it and start over.
+        if (shouldFallback(err) && GEMINI_API_KEY) {
+          console.error('Claude unavailable, falling back to Gemini:', err instanceof Error ? err.message : err)
+          try {
+            const text = await callGemini(body, false)
+            controller.enqueue(encoder.encode(text))
+            controller.close()
+            return
+          } catch (fallbackErr) {
+            console.error('Gemini fallback also failed:', fallbackErr)
+          }
+        }
         controller.enqueue(encoder.encode(`__ERROR__:${friendlyError(err)}`))
         controller.close()
       }
@@ -252,7 +346,7 @@ Deno.serve(async (req) => {
     const { data: userData, error: userErr } = await supabase.auth.getUser()
     if (userErr || !userData.user) return json({ error: 'Unauthorized' }, 401)
 
-    if (!anthropic) return json({ error: 'AI backend is not connected yet.' }, 503)
+    if (!anthropic && !GEMINI_API_KEY) return json({ error: 'AI backend is not connected yet.' }, 503)
 
     const usage = await checkAndIncrementDailyUsage()
     if (!usage.allowed) {
@@ -266,7 +360,7 @@ Deno.serve(async (req) => {
       return new Response(stream, { headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' } })
     }
 
-    const text = await callClaude(body)
+    const text = await callStructured(body)
 
     try {
       const parsed = JSON.parse(text.trim().replace(/^```json\s*|```$/g, ''))
