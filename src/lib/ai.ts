@@ -52,9 +52,11 @@ export class AiNotConfiguredError extends Error {
 
 async function invokeAi<T>(payload: AiAssistRequest): Promise<T> {
   if (!isSupabaseConfigured) throw new AiNotConfiguredError()
-  // 35s client-side ceiling — comfortably above the edge function's own 25s Gemini
-  // timeout, so a real timeout error there always surfaces before this one does.
-  const { data, error } = await withTimeout(supabase.functions.invoke('ai-assist', { body: payload }), 35_000)
+  // 55s client-side ceiling — deliberately above the edge function's own 45s Claude
+  // timeout, so the server's specific, friendly error always surfaces before this
+  // generic one does. Keep this the larger of the two if either is ever changed: if
+  // the client gives up first, the model keeps generating (and billing) unseen.
+  const { data, error } = await withTimeout(supabase.functions.invoke('ai-assist', { body: payload }), 55_000)
   if (error) {
     const message = await extractFunctionErrorMessage(error)
     if (message.includes('not connected')) throw new AiNotConfiguredError()

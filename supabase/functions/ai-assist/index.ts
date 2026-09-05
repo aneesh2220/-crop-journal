@@ -1,35 +1,40 @@
 // Supabase Edge Function: ai-assist
-// Proxies all Gemini calls for the app (chat, crop doctor, soil health, crop
-// suggestions, irrigation advice) so the Gemini API key never reaches the browser.
+// Proxies all Claude calls for the app (chat, crop doctor, soil health, crop
+// suggestions, irrigation advice) so the Anthropic API key never reaches the browser.
 //
 // Deploy:  supabase functions deploy ai-assist
-// Secret:  supabase secrets set GEMINI_API_KEY=xxxx
+// Secret:  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
 
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import Anthropic from 'npm:@anthropic-ai/sdk@0.124.0'
 
-const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
+const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-// Hard, code-enforced spend-safety ceiling — refuses further Gemini calls once this
-// many have happened app-wide today, regardless of Google Cloud billing/alert config.
-// Worst-case cost math (image-attached request, full retry+fallback chain, ~2000 input
-// + ~500 output tokens per attempt): ~$0.01/request worst case × 100/day ≈ $1/day ceiling,
-// i.e. under $30/month even in the pessimistic case where every single request maxes out
-// every retry — realistic usage costs a small fraction of this. Adjust freely; this exists
-// so "how much could this possibly cost" always has a concrete, calculable answer.
+// Hard, code-enforced spend ceiling — refuses further Claude calls once this many have
+// happened app-wide today, whatever the Anthropic account's own limits are.
+//
+// This matters more on Anthropic than it did on Gemini: there is no free tier here, so
+// every single request is billed to the key's owner from the first call. Worst-case math
+// at claude-opus-5 ($5/MTok in, $25/MTok out) with ~2000 input + ~800 output tokens per
+// request: ~$0.03/request × 100/day ≈ $3/day ≈ $90/month absolute ceiling. Lower
+// MAX_DAILY_AI_REQUESTS to lower that number proportionally — it is the only thing
+// standing between a traffic spike and a real bill.
 const MAX_DAILY_AI_REQUESTS = 100
 
-// Flash-Lite gets ~50% more free-tier throughput than full Flash (15 RPM vs 10 RPM),
-// and this app's tasks — farming Q&A, structured extraction like Crop Doctor's JSON
-// output — don't need deep multi-step reasoning. So Lite is PRIMARY for reliability;
-// full Flash is the fallback for when Lite itself has trouble, trading a bit of quality
-// for a lot of headroom. Verify exact model IDs before changing either — a mistyped or
-// EOL'd name (e.g. gemini-2.0-flash, retired March 2026) makes the fallback silently
-// useless, which is exactly what happened here twice before this fix.
-const PRIMARY_MODEL = 'gemini-3.5-flash-lite'
-const FALLBACK_MODEL = 'gemini-3.6-flash'
+const MODEL = 'claude-opus-5'
+
+// Chat is latency-sensitive and the questions are ordinary farming Q&A, not multi-step
+// reasoning — low effort keeps replies fast and cheap. The structured extraction tasks
+// (diagnosis, soil interpretation) benefit from a bit more deliberation, so they run at
+// medium. Neither disables thinking: on Opus 5 that risks tool-call/tag leakage and the
+// low-effort setting already gets the cost saving.
+const CHAT_EFFORT = 'low'
+const STRUCTURED_EFFORT = 'medium'
+
+const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,216 +50,171 @@ interface RequestBody {
   context?: Record<string, unknown>
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 function languageInstruction(lang: string) {
   return `Respond ONLY in the language with BCP-47/ISO code "${lang}" (use the natural script for that language). Keep the tone simple, warm and easy for a rural farmer with limited literacy to understand. Avoid jargon; explain plainly.`
 }
 
-function buildPrompt(body: RequestBody): string {
+/** The stable, per-task system prompt. Kept separate from the user's words so it can be cached. */
+function systemPrompt(body: RequestBody): string {
   const langInstr = languageInstruction(body.language)
 
   switch (body.task) {
     case 'chat':
-      return `You are AgroAI, a helpful, encouraging farming assistant for smallholder farmers in India. ${langInstr}\n\nAnswer the farmer's question clearly and practically. If it needs region-specific data you don't have (like exact local prices or forecasts), say so honestly instead of inventing numbers.\n\nFarmer's question: ${body.text ?? '(see attached image)'}`
+      return `You are AgroAI, a helpful, encouraging farming assistant for smallholder farmers in India. ${langInstr}\n\nAnswer the farmer's question clearly and practically. If it needs region-specific data you don't have (like exact local prices or forecasts), say so honestly instead of inventing numbers. Keep answers short enough to read on a phone.`
     case 'crop-doctor':
-      return `You are an expert plant pathologist helping a farmer diagnose a crop problem from a photo and/or symptom description. ${langInstr}\n\nSymptoms described: ${body.text || '(none, rely on image)'}\n\nReturn ONLY valid JSON matching this exact shape, no markdown fences, no extra text:\n{"problem": string, "confidence": number (0-1), "causes": string[], "treatment": string[], "prevention": string[], "severity": "low"|"medium"|"high"}\nAll string values must be written in the target language.`
-    case 'soil-health': {
-      const c = body.context ?? {}
-      return `You are a soil science expert. A farmer has provided the following soil data (any field may be missing): pH=${c.ph ?? 'unknown'}, Nitrogen=${c.nitrogen ?? 'unknown'} mg/kg, Phosphorus=${c.phosphorus ?? 'unknown'} mg/kg, Potassium=${c.potassium ?? 'unknown'} mg/kg, texture=${c.texture ?? 'unknown'}. ${body.imageBase64 ? 'A soil photo is also attached.' : ''} ${langInstr}\n\nReturn ONLY valid JSON matching this exact shape, no markdown fences:\n{"summary": string, "health_score": number (0-100), "recommendations": string[], "suitable_crops": string[]}`
-    }
-    case 'crop-suggestion': {
-      const c = body.context ?? {}
-      return `You are an agronomy advisor. Suggest the best crops for a farmer with: location=${c.location ?? 'unspecified'}, soil type=${c.soilType ?? 'unspecified'}, season=${c.season ?? 'unspecified'}, water availability=${c.water ?? 'unspecified'}, additional needs=${c.needs ?? 'none'}. ${langInstr}\n\nReturn ONLY valid JSON matching this exact shape, no markdown fences:\n{"crops": [{"name": string, "suitability": number (0-100), "reason": string}]} with 3-6 crops, ranked best first.`
-    }
-    case 'irrigation': {
-      const c = body.context ?? {}
-      return `You are an irrigation specialist. Advise a farmer growing crop=${c.crop ?? 'unspecified'}, soil type=${c.soilType ?? 'unspecified'}, growth stage=${c.stage ?? 'unspecified'}, current weather=${c.weather ?? 'unspecified'}. ${langInstr}\n\nReturn ONLY valid JSON matching this exact shape, no markdown fences:\n{"schedule": string, "tips": string[], "waterAmount": string}`
-    }
+      return `You are an expert plant pathologist helping a farmer diagnose a crop problem from a photo and/or symptom description. ${langInstr}\n\nReturn ONLY valid JSON matching this exact shape, no markdown fences, no extra text:\n{"problem": string, "confidence": number (0-1), "causes": string[], "treatment": string[], "prevention": string[], "severity": "low"|"medium"|"high"}\nAll string values must be written in the target language.`
+    case 'soil-health':
+      return `You are a soil science expert interpreting a farmer's soil test. ${langInstr}\n\nReturn ONLY valid JSON matching this exact shape, no markdown fences:\n{"summary": string, "health_score": number (0-100), "recommendations": string[], "suitable_crops": string[]}`
+    case 'crop-suggestion':
+      return `You are an agronomy advisor suggesting crops for a farmer's conditions. ${langInstr}\n\nReturn ONLY valid JSON matching this exact shape, no markdown fences:\n{"crops": [{"name": string, "suitability": number (0-100), "reason": string}]} with 3-6 crops, ranked best first.`
+    case 'irrigation':
+      return `You are an irrigation specialist advising a farmer. ${langInstr}\n\nReturn ONLY valid JSON matching this exact shape, no markdown fences:\n{"schedule": string, "tips": string[], "waterAmount": string}`
   }
 }
 
-function buildParts(prompt: string, imageBase64?: string, history?: RequestBody['history']): unknown[] {
-  const parts: unknown[] = []
-  if (history?.length) {
-    const historyText = history.map((h) => `${h.role === 'user' ? 'Farmer' : 'AgroAI'}: ${h.content}`).join('\n')
-    parts.push({ text: `Conversation so far:\n${historyText}\n\n` })
-  }
-  parts.push({ text: prompt })
-  if (imageBase64) parts.push({ inlineData: { mimeType: 'image/jpeg', data: imageBase64 } })
-  return parts
-}
-
-function generationConfig(model: string, expectJson: boolean) {
-  return {
-    temperature: 0.6,
-    // Only the full gemini-3.6-flash model has extended "thinking" on by default (which
-    // adds real latency) and understands this field — Flash-Lite is already tuned for
-    // low latency and doesn't need it. This is a farming Q&A assistant, not a multi-step
-    // reasoning agent, so "low" trades away deep reasoning for speed when it does apply.
-    ...(model === 'gemini-3.6-flash' ? { thinkingConfig: { thinkingLevel: 'low' } } : {}),
-    ...(expectJson ? { responseMimeType: 'application/json' } : {}),
+/** The variable part — this turn's actual question or data. */
+function userText(body: RequestBody): string {
+  const c = body.context ?? {}
+  switch (body.task) {
+    case 'chat':
+      return body.text ?? '(see attached image)'
+    case 'crop-doctor':
+      return `Symptoms described: ${body.text || '(none, rely on the image)'}`
+    case 'soil-health':
+      return `Soil data (any field may be missing): pH=${c.ph ?? 'unknown'}, Nitrogen=${c.nitrogen ?? 'unknown'} mg/kg, Phosphorus=${c.phosphorus ?? 'unknown'} mg/kg, Potassium=${c.potassium ?? 'unknown'} mg/kg, texture=${c.texture ?? 'unknown'}.${body.imageBase64 ? ' A soil photo is attached.' : ''}`
+    case 'crop-suggestion':
+      return `Location=${c.location ?? 'unspecified'}, soil type=${c.soilType ?? 'unspecified'}, season=${c.season ?? 'unspecified'}, water availability=${c.water ?? 'unspecified'}, additional needs=${c.needs ?? 'none'}.`
+    case 'irrigation':
+      return `Crop=${c.crop ?? 'unspecified'}, soil type=${c.soilType ?? 'unspecified'}, growth stage=${c.stage ?? 'unspecified'}, current weather=${c.weather ?? 'unspecified'}.`
   }
 }
 
 /**
- * Retrying the SAME model only makes sense for 503 (transient overload) — a brief
- * backoff can genuinely help. It's pointless for 429 (quota exhausted): the quota
- * window won't clear in under a second, and each retry only burns more of a scarce
- * free-tier daily allowance. So: 503 gets one same-model retry, then either error
- * moves straight to the fallback model (a different model = a separate quota pool).
+ * Prior turns go in as real user/assistant messages rather than being flattened into one
+ * text blob the way the Gemini version did. It costs nothing extra and gives the model a
+ * correctly structured conversation, which matters for follow-up questions like
+ * "and how much of it?".
  */
-function friendlyGeminiError(status: number, raw: string): string {
-  if (status === 429) {
-    return 'AI usage limit reached — this app is on Gemini\'s free-tier quota, which caps requests per day. It resets automatically, or the app owner can enable billing on the Gemini API key for much higher limits.'
+function buildMessages(body: RequestBody): Anthropic.MessageParam[] {
+  const messages: Anthropic.MessageParam[] = []
+
+  for (const turn of body.history ?? []) {
+    if (!turn.content?.trim()) continue
+    messages.push({ role: turn.role, content: turn.content })
   }
-  if (status === 503) {
-    return 'The AI service is very busy right now. Please try again in a minute.'
+
+  const content: Anthropic.ContentBlockParam[] = []
+  if (body.imageBase64) {
+    content.push({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: body.imageBase64 },
+    })
   }
-  return raw
+  content.push({ type: 'text', text: userText(body) })
+  messages.push({ role: 'user', content })
+
+  // The API requires the first message to be from the user. A history that somehow
+  // starts with an assistant turn would 400, so drop any leading assistant messages.
+  while (messages.length && messages[0].role !== 'user') messages.shift()
+
+  return messages
+}
+
+/** Turns SDK errors into something a farmer can act on, without leaking key details. */
+function friendlyError(err: unknown): string {
+  if (err instanceof Anthropic.AuthenticationError) {
+    return 'The AI service rejected this app\'s credentials. The app owner needs to check the Anthropic API key.'
+  }
+  if (err instanceof Anthropic.PermissionDeniedError) {
+    return 'This app\'s AI access has been revoked or has no remaining credit. The app owner needs to check the Anthropic account.'
+  }
+  if (err instanceof Anthropic.RateLimitError) {
+    return 'The AI service is busy right now. Please try again in a minute.'
+  }
+  if (err instanceof Anthropic.APIConnectionTimeoutError) {
+    return 'The AI took too long to respond. Please try again.'
+  }
+  if (err instanceof Anthropic.APIError) {
+    return `AI service error (${err.status ?? '?'}). Please try again in a moment.`
+  }
+  return err instanceof Error ? err.message : 'Unknown error'
 }
 
 /** Non-streaming call, used by the structured tasks that need a complete JSON body. */
-async function callGemini(prompt: string, imageBase64?: string, history?: RequestBody['history'], expectJson = false) {
-  const parts = buildParts(prompt, imageBase64, history)
-  let lastStatus = 0
-  let lastMessage = 'Unknown error'
+async function callClaude(body: RequestBody): Promise<string> {
+  const response = await anthropic!.messages.create(
+    {
+      model: MODEL,
+      max_tokens: 4096,
+      system: [{ type: 'text', text: systemPrompt(body), cache_control: { type: 'ephemeral' } }],
+      output_config: { effort: STRUCTURED_EFFORT },
+      messages: buildMessages(body),
+    },
+    { timeout: 45_000 }
+  )
 
-  for (const model of [PRIMARY_MODEL, PRIMARY_MODEL, FALLBACK_MODEL]) {
-    if (lastStatus === 503) await sleep(900) // only worth a backoff after overload, not after quota exhaustion
-    if (lastStatus === 429 && model === PRIMARY_MODEL) continue // quota won't have cleared — skip straight past the repeat
-
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 25_000)
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: generationConfig(model, expectJson) }),
-        signal: controller.signal,
-      })
-
-      if (!res.ok) {
-        const errText = await res.text()
-        lastStatus = res.status
-        lastMessage = `Gemini API error (${res.status}): ${errText.slice(0, 300)}`
-        if (res.status !== 503 && res.status !== 429) break // other errors won't fix themselves on retry
-        continue
-      }
-
-      const data = await res.json()
-      const text = data.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text).join('') ?? ''
-      if (!text) {
-        lastMessage = 'Gemini returned an empty response'
-        break
-      }
-      return text
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        lastMessage = 'Gemini took too long to respond. Please try again.'
-        break
-      }
-      throw err
-    } finally {
-      clearTimeout(timeout)
-    }
+  // A safety decline arrives as HTTP 200 with stop_reason "refusal" — content is empty,
+  // so this has to be checked before reading it or the farmer just gets a blank card.
+  if (response.stop_reason === 'refusal') {
+    throw new Error('The AI declined to answer this request. Try rephrasing it.')
   }
 
-  throw new Error(friendlyGeminiError(lastStatus, lastMessage))
+  const text = response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('')
+
+  if (!text.trim()) throw new Error('The AI returned an empty response. Please try again.')
+  return text
 }
 
 /**
- * Streams plain chat replies token-by-token instead of waiting for the full
- * response — the client can render text as it arrives instead of staring at a
- * spinner for the whole generation. Structured tasks still use callGemini()
+ * Streams chat replies token-by-token so the client renders text as it arrives instead
+ * of showing a spinner for the whole generation. Structured tasks use callClaude()
  * above since they need the complete JSON body before it can be parsed.
  *
- * Overload (503) errors happen on the initial response, before any tokens
- * stream — so it's safe to retry/fall back to a different model at that point,
- * same as the non-streaming path.
+ * Errors raised before the first token are reported through the same `__ERROR__:`
+ * sentinel the client already understands; once tokens are flowing there is no way to
+ * signal a failure other than ending the stream.
  */
-function streamGeminiChat(prompt: string, history?: RequestBody['history']): ReadableStream<Uint8Array> {
-  const parts = buildParts(prompt, undefined, history)
+function streamClaudeChat(body: RequestBody): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
-  const decoder = new TextDecoder()
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      let upstream: Response | null = null
-      let lastStatus = 0
-      let lastMessage = 'Unknown error'
-
-      for (const model of [PRIMARY_MODEL, PRIMARY_MODEL, FALLBACK_MODEL]) {
-        if (upstream) break
-        if (lastStatus === 503) await sleep(900)
-        if (lastStatus === 429 && model === PRIMARY_MODEL) continue
-
-        const abortController = new AbortController()
-        const timeout = setTimeout(() => abortController.abort(), 25_000)
-        try {
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: generationConfig(model, false) }),
-              signal: abortController.signal,
-            }
-          )
-          if (res.ok && res.body) {
-            upstream = res
-          } else {
-            const errText = await res.text().catch(() => '')
-            lastStatus = res.status
-            lastMessage = `Gemini API error (${res.status}): ${errText.slice(0, 200)}`
-            if (res.status !== 503 && res.status !== 429) break
-          }
-        } catch (err) {
-          if (err instanceof Error && err.name === 'AbortError') {
-            lastMessage = 'Gemini took too long to respond. Please try again.'
-            break
-          }
-          lastMessage = String(err)
-          break
-        } finally {
-          clearTimeout(timeout)
-        }
-      }
-
-      if (!upstream) {
-        controller.enqueue(encoder.encode(`__ERROR__:${friendlyGeminiError(lastStatus, lastMessage)}`))
-        controller.close()
-        return
-      }
-
       try {
-        const reader = upstream.body!.getReader()
-        let buffer = ''
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-          for (const line of lines) {
-            const trimmed = line.trim()
-            if (!trimmed.startsWith('data:')) continue
-            const jsonStr = trimmed.slice(5).trim()
-            if (!jsonStr) continue
-            try {
-              const parsed = JSON.parse(jsonStr)
-              const chunkText = parsed.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? ''
-              if (chunkText) controller.enqueue(encoder.encode(chunkText))
-            } catch {
-              // partial/malformed SSE line — skip, next chunk will complete it
-            }
+        const stream = anthropic!.messages.stream(
+          {
+            model: MODEL,
+            max_tokens: 2048,
+            system: [{ type: 'text', text: systemPrompt(body), cache_control: { type: 'ephemeral' } }],
+            output_config: { effort: CHAT_EFFORT },
+            messages: buildMessages(body),
+          },
+          { timeout: 40_000 }
+        )
+
+        let sentAnything = false
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            sentAnything = true
+            controller.enqueue(encoder.encode(event.delta.text))
           }
+        }
+
+        if (!sentAnything) {
+          const final = await stream.finalMessage()
+          controller.enqueue(
+            encoder.encode(
+              final.stop_reason === 'refusal'
+                ? '__ERROR__:The AI declined to answer this request. Try rephrasing it.'
+                : '__ERROR__:The AI returned an empty response. Please try again.'
+            )
+          )
         }
         controller.close()
       } catch (err) {
-        controller.enqueue(encoder.encode(`__ERROR__:${err instanceof Error ? err.message : String(err)}`))
+        controller.enqueue(encoder.encode(`__ERROR__:${friendlyError(err)}`))
         controller.close()
       }
     },
@@ -273,8 +233,8 @@ async function checkAndIncrementDailyUsage(): Promise<{ allowed: boolean; count:
   const { data, error } = await adminClient.rpc('increment_ai_usage_and_get_count', { p_date: today })
   if (error || typeof data !== 'number') {
     // If the counter itself is broken, fail open rather than taking the whole
-    // feature down over a bookkeeping issue — the per-call timeouts and model
-    // fallback are still in place as independent safeguards.
+    // feature down over a bookkeeping issue — the per-call timeouts are still in
+    // place as an independent safeguard.
     console.error('ai_usage_daily counter failed:', error)
     return { allowed: true, count: -1 }
   }
@@ -292,7 +252,7 @@ Deno.serve(async (req) => {
     const { data: userData, error: userErr } = await supabase.auth.getUser()
     if (userErr || !userData.user) return json({ error: 'Unauthorized' }, 401)
 
-    if (!GEMINI_API_KEY) return json({ error: 'AI backend is not connected yet.' }, 503)
+    if (!anthropic) return json({ error: 'AI backend is not connected yet.' }, 503)
 
     const usage = await checkAndIncrementDailyUsage()
     if (!usage.allowed) {
@@ -300,14 +260,13 @@ Deno.serve(async (req) => {
     }
 
     const body = (await req.json()) as RequestBody
-    const prompt = buildPrompt(body)
 
     if (body.task === 'chat') {
-      const stream = streamGeminiChat(prompt, body.history)
+      const stream = streamClaudeChat(body)
       return new Response(stream, { headers: { ...corsHeaders, 'Content-Type': 'text/plain; charset=utf-8' } })
     }
 
-    const text = await callGemini(prompt, body.imageBase64, body.history, true)
+    const text = await callClaude(body)
 
     try {
       const parsed = JSON.parse(text.trim().replace(/^```json\s*|```$/g, ''))
@@ -316,7 +275,7 @@ Deno.serve(async (req) => {
       return json({ error: 'AI returned an unexpected format. Please try again.' }, 502)
     }
   } catch (err) {
-    return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500)
+    return json({ error: friendlyError(err) }, 500)
   }
 })
 

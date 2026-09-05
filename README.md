@@ -5,7 +5,7 @@ weather, mandi prices, farm management, and a multilingual AI assistant (text/im
 in 23 languages (English + 22 scheduled Indian languages).
 
 Stack: **React + Vite + TypeScript + Tailwind CSS v4**, **Supabase** (Postgres, Auth,
-Storage, Edge Functions), **Google Gemini** for AI, **OpenWeatherMap** for weather,
+Storage, Edge Functions), **Anthropic Claude** for AI, **OpenWeatherMap** for weather,
 **data.gov.in Agmarknet** for mandi prices.
 
 No feature shows fabricated data — every screen that depends on an API key you haven't
@@ -17,7 +17,7 @@ configured yet shows an honest "not connected" state instead of fake numbers.
 
 - Node.js 18+
 - A free [Supabase](https://supabase.com) account
-- A free [Google AI Studio](https://aistudio.google.com/apikey) API key (Gemini)
+- An [Anthropic Console](https://console.anthropic.com/settings/keys) API key (Claude) — note: Anthropic has no free tier, so this key is billed per request
 - A free [OpenWeatherMap](https://openweathermap.org/api) API key
 - (Optional) A free API key from [data.gov.in](https://data.gov.in) for mandi prices
 - The [Supabase CLI](https://supabase.com/docs/guides/cli) (`npm i -g supabase`) to deploy edge functions
@@ -46,19 +46,19 @@ VITE_SUPABASE_URL=https://xxxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 ```
 
-Never put the Gemini/weather/market API keys here — they belong on the server (next step),
+Never put the Claude/weather/market API keys here — they belong on the server (next step),
 never in the frontend bundle.
 
 ## 4. Deploy the Edge Functions (secure backend)
 
 The four functions in [`supabase/functions`](supabase/functions) are the *only* place the
-Gemini, OpenWeatherMap, and data.gov.in keys are ever used:
+Claude, OpenWeatherMap, and data.gov.in keys are ever used:
 
 ```bash
 supabase login
 supabase link --project-ref your-project-ref
 
-supabase secrets set GEMINI_API_KEY=your-gemini-key
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-your-key
 supabase secrets set OPENWEATHER_API_KEY=your-openweather-key
 supabase secrets set DATA_GOV_IN_API_KEY=your-data-gov-in-key   # optional — Market Watch shows "not connected" without it
 
@@ -102,12 +102,12 @@ src/
   contexts/       AuthContext (Supabase auth), ThemeContext (dark/light/system)
   hooks/          Data hooks — useFarms, useCrops, useTasks, useWeather, useVoice…
   i18n/           23 locale JSON files + language registry
-  lib/            Supabase client, typed DB schema, Gemini/weather/market API wrappers
+  lib/            Supabase client, typed DB schema, Claude/weather/market API wrappers
   pages/          One file per route (Dashboard, ChatAssistant, CropDoctor, …)
   data/quotes.ts  Multilingual agricultural/motivational quotes
 supabase/
   schema.sql               Full DB schema + RLS policies + storage buckets
-  functions/ai-assist       Gemini proxy (chat, crop doctor, soil health, crop suggestions, irrigation)
+  functions/ai-assist       Claude proxy (chat, crop doctor, soil health, crop suggestions, irrigation)
   functions/weather-proxy   OpenWeatherMap proxy
   functions/market-proxy    data.gov.in Agmarknet proxy
   functions/delete-account  Deletes the auth user (service-role, cascades all farm data)
@@ -121,5 +121,5 @@ translation quality is generally strong for the major languages (Bengali, Gujara
 Malayalam, Marathi, Nepali, Odia, Punjabi, Tamil, Telugu, Urdu, Assamese) but lower-resource
 languages — Bodo, Dogri, Konkani, Maithili, Manipuri, Santali, Sindhi, Kashmiri — should get a
 native-speaker review pass before you rely on them in production. AI assistant replies (chat,
-crop doctor, etc.) are generated live in the farmer's selected language by Gemini, not from
-these static files, so their quality depends on Gemini rather than these translations.
+crop doctor, etc.) are generated live in the farmer's selected language by Claude, not from
+these static files, so their quality depends on Claude rather than these translations.
