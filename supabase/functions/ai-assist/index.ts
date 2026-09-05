@@ -15,20 +15,30 @@ const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
 // and the app silently returns to Claude the moment a valid key is in place.
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
 const GEMINI_MODEL = 'gemini-3.5-flash-lite'
+
+// Last-resort tier, used only when both providers above are unavailable — typically
+// when Gemini's free-tier quota is exhausted. Groq runs open-weight models, which are
+// weaker on the smaller Indian languages and on reading crop photos, so it must never
+// be preferred over Gemini. As a fallback it is clearly right: a rougher answer beats
+// telling a farmer the assistant is down.
+const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY')
+const GROQ_MODEL = 'llama-3.3-70b-versatile'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-// Hard, code-enforced spend ceiling — refuses further Claude calls once this many have
-// happened app-wide today, whatever the Anthropic account's own limits are.
+// Two independent daily ceilings.
 //
-// This matters more on Anthropic than it did on Gemini: there is no free tier here, so
-// every single request is billed to the key's owner from the first call. Worst-case math
-// at claude-opus-5 ($5/MTok in, $25/MTok out) with ~2000 input + ~800 output tokens per
-// request: ~$0.03/request × 100/day ≈ $3/day ≈ $90/month absolute ceiling. Lower
-// MAX_DAILY_AI_REQUESTS to lower that number proportionally — it is the only thing
-// standing between a traffic spike and a real bill.
-const MAX_DAILY_AI_REQUESTS = 100
+// APP-WIDE is the spend guard. It was set to 100 when Claude — which bills every single
+// request — was the only provider. On Gemini's free tier that number cost users far more
+// than it saved: roughly 25 farmers asking a few questions each would lock the whole app
+// out for the rest of the day. Raised accordingly. If Claude ever becomes the primary
+// provider again with real billing attached, lower this first.
+//
+// PER-USER stops one person (or a script) draining the shared allowance. Without it the
+// app-wide cap protects the bill but not the other farmers.
+const MAX_DAILY_AI_REQUESTS = 1500
+const MAX_DAILY_AI_REQUESTS_PER_USER = 25
 
 const MODEL = 'claude-opus-5'
 
@@ -167,6 +177,68 @@ async function callGemini(body: RequestBody, expectJson: boolean): Promise<strin
   }
 }
 
+/** Last-resort provider. Text only — see the GROQ_MODEL note above. */
+async function callGroq(body: RequestBody, expectJson: boolean): Promise<string> {
+  if (!GROQ_API_KEY) throw new Error('No further fallback configured.')
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 25_000)
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_API_KEY}` },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        temperature: 0.6,
+        messages: [
+          { role: 'system', content: systemPrompt(body) },
+          ...(body.history ?? [])
+            .filter((h) => h.content?.trim())
+            .map((h) => ({ role: h.role, content: h.content })),
+          { role: 'user', content: userText(body) },
+        ],
+        ...(expectJson ? { response_format: { type: 'json_object' } } : {}),
+      }),
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`Groq fallback failed (${res.status})`)
+    const data = await res.json()
+    const text = data.choices?.[0]?.message?.content ?? ''
+    if (!text.trim()) throw new Error('Groq fallback returned nothing')
+    return text
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Runs the provider chain in quality order and returns the first real answer.
+ * Each provider is only tried when the ones before it genuinely could not serve, so
+ * farmers get the best available model rather than the cheapest one.
+ */
+async function callWithFallbacks(body: RequestBody, expectJson: boolean): Promise<string> {
+  const attempts: { name: string; run: () => Promise<string> }[] = []
+  if (anthropic) attempts.push({ name: 'claude', run: () => callClaude(body) })
+  if (GEMINI_API_KEY) attempts.push({ name: 'gemini', run: () => callGemini(body, expectJson) })
+  if (GROQ_API_KEY) attempts.push({ name: 'groq', run: () => callGroq(body, expectJson) })
+
+  let lastErr: unknown = new Error('No AI provider is configured.')
+  for (const [i, attempt] of attempts.entries()) {
+    try {
+      return await attempt.run()
+    } catch (err) {
+      lastErr = err
+      const isLast = i === attempts.length - 1
+      // Claude distinguishes "try someone else" from "this request is malformed"; the
+      // plain-fetch providers can't, so for those any failure moves down the chain.
+      const movesOn = attempt.name === 'claude' ? shouldFallback(err) : true
+      if (isLast || !movesOn) break
+      console.error(`${attempt.name} unavailable, trying next provider:`, err instanceof Error ? err.message : err)
+    }
+  }
+  throw lastErr
+}
+
 /**
  * True for failures where trying a different provider is the right move: a bad or
  * revoked key, or the service being unreachable. A 400 from a malformed request would
@@ -204,16 +276,7 @@ function friendlyError(err: unknown): string {
 
 /** Non-streaming call, used by the structured tasks that need a complete JSON body. */
 async function callStructured(body: RequestBody): Promise<string> {
-  if (!anthropic) return await callGemini(body, true)
-  try {
-    return await callClaude(body)
-  } catch (err) {
-    if (shouldFallback(err) && GEMINI_API_KEY) {
-      console.error('Claude unavailable, falling back to Gemini:', err instanceof Error ? err.message : err)
-      return await callGemini(body, true)
-    }
-    throw err
-  }
+  return await callWithFallbacks(body, true)
 }
 
 async function callClaude(body: RequestBody): Promise<string> {
@@ -259,7 +322,7 @@ function streamClaudeChat(body: RequestBody): ReadableStream<Uint8Array> {
     async start(controller) {
       try {
         if (!anthropic) {
-          controller.enqueue(encoder.encode(await callGemini(body, false)))
+          controller.enqueue(encoder.encode(await callWithFallbacks(body, false)))
           controller.close()
           return
         }
@@ -297,15 +360,27 @@ function streamClaudeChat(body: RequestBody): ReadableStream<Uint8Array> {
         // Safe to switch providers here only because an auth/connection failure happens
         // on the opening request, before any token has been written to the stream.
         // Once text is flowing there is no way to retract it and start over.
-        if (shouldFallback(err) && GEMINI_API_KEY) {
-          console.error('Claude unavailable, falling back to Gemini:', err instanceof Error ? err.message : err)
+        if (shouldFallback(err) && (GEMINI_API_KEY || GROQ_API_KEY)) {
+          console.error('Claude stream unavailable, falling back:', err instanceof Error ? err.message : err)
           try {
-            const text = await callGemini(body, false)
-            controller.enqueue(encoder.encode(text))
-            controller.close()
-            return
+            // Fallback replies arrive whole rather than token-by-token. The chat UI
+            // renders whatever it receives, so this shows up as one quick burst
+            // instead of a typing effect — a fine trade for still getting an answer.
+            for (const run of [
+              GEMINI_API_KEY ? () => callGemini(body, false) : null,
+              GROQ_API_KEY ? () => callGroq(body, false) : null,
+            ]) {
+              if (!run) continue
+              try {
+                controller.enqueue(encoder.encode(await run()))
+                controller.close()
+                return
+              } catch (e) {
+                console.error('fallback provider failed:', e)
+              }
+            }
           } catch (fallbackErr) {
-            console.error('Gemini fallback also failed:', fallbackErr)
+            console.error('all fallbacks failed:', fallbackErr)
           }
         }
         controller.enqueue(encoder.encode(`__ERROR__:${friendlyError(err)}`))
@@ -335,6 +410,23 @@ async function checkAndIncrementDailyUsage(): Promise<{ allowed: boolean; count:
   return { allowed: data <= MAX_DAILY_AI_REQUESTS, count: data }
 }
 
+/** Same pattern, scoped to one signed-in user (guests included — each has its own id). */
+async function checkAndIncrementUserUsage(userId: string): Promise<{ allowed: boolean; count: number }> {
+  const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+  const today = new Date().toISOString().slice(0, 10)
+  const { data, error } = await adminClient.rpc('increment_user_ai_usage_and_get_count', {
+    p_user: userId,
+    p_date: today,
+  })
+  if (error || typeof data !== 'number') {
+    // Fail open, exactly as the app-wide counter does — the app-wide cap is still in
+    // force, so a broken per-user counter can't turn into unbounded usage.
+    console.error('ai_usage_user_daily counter failed:', error)
+    return { allowed: true, count: -1 }
+  }
+  return { allowed: data <= MAX_DAILY_AI_REQUESTS_PER_USER, count: data }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
@@ -346,11 +438,20 @@ Deno.serve(async (req) => {
     const { data: userData, error: userErr } = await supabase.auth.getUser()
     if (userErr || !userData.user) return json({ error: 'Unauthorized' }, 401)
 
-    if (!anthropic && !GEMINI_API_KEY) return json({ error: 'AI backend is not connected yet.' }, 503)
+    if (!anthropic && !GEMINI_API_KEY && !GROQ_API_KEY) return json({ error: 'AI backend is not connected yet.' }, 503)
+
+    // Per-user first: when someone has used their own share, say so specifically rather
+    // than blaming an app-wide limit they can do nothing about.
+    const userUsage = await checkAndIncrementUserUsage(userData.user.id)
+    if (!userUsage.allowed) {
+      return json({
+        error: `You have used your ${MAX_DAILY_AI_REQUESTS_PER_USER} AI questions for today. This keeps the free service available for every farmer — your allowance resets at midnight UTC.`,
+      }, 429)
+    }
 
     const usage = await checkAndIncrementDailyUsage()
     if (!usage.allowed) {
-      return json({ error: "AgroAI's daily AI usage safety limit has been reached. This is a deliberate cap to prevent runaway costs — it resets at midnight UTC." }, 429)
+      return json({ error: "AgroAI's daily AI usage safety limit has been reached across all users. It resets at midnight UTC." }, 429)
     }
 
     const body = (await req.json()) as RequestBody
