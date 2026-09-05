@@ -28,18 +28,25 @@ export function SatelliteMap({
   lng,
   zoom = 17,
   showLabels = true,
+  /** Optional dated Sentinel-2 layer drawn over the base imagery. */
+  overlayUrl = null,
+  onOverlayLoadingChange,
   className,
 }: {
   lat: number
   lng: number
   zoom?: number
   showLabels?: boolean
+  overlayUrl?: string | null
+  /** Fires while the dated layer's tiles are still arriving. */
+  onOverlayLoadingChange?: (loading: boolean) => void
   className?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const markerRef = useRef<L.Marker | null>(null)
   const labelsRef = useRef<L.TileLayer | null>(null)
+  const overlayRef = useRef<L.TileLayer | null>(null)
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -67,6 +74,7 @@ export function SatelliteMap({
       mapRef.current = null
       markerRef.current = null
       labelsRef.current = null
+      overlayRef.current = null
     }
     // Intentionally mount-only: re-centring on prop change is handled by the effects below,
     // so the map instance itself is never torn down and rebuilt mid-session.
@@ -79,6 +87,37 @@ export function SatelliteMap({
     map.setView([lat, lng], zoom)
     markerRef.current?.setLatLng([lat, lng])
   }, [lat, lng, zoom])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    if (overlayRef.current) {
+      map.removeLayer(overlayRef.current)
+      overlayRef.current = null
+    }
+    if (overlayUrl) {
+      // Sentinel-2 is 10 m/pixel — it genuinely has no detail past about z16, so let
+      // Leaflet upscale the last real zoom level instead of requesting blank tiles.
+      const layer = L.tileLayer(overlayUrl, { maxNativeZoom: 16, maxZoom: 19, opacity: 1 })
+
+      // These tiles are rendered on demand straight out of a multi-hundred-megabyte
+      // satellite file, so the first paint routinely takes several seconds. Without a
+      // signal the map just sits there half grey and reads as broken.
+      layer.on('loading', () => onOverlayLoadingChange?.(true))
+      layer.on('load', () => onOverlayLoadingChange?.(false))
+
+      overlayRef.current = layer
+      layer.addTo(map)
+      // Keep village/road names on top of the dated imagery rather than buried under it.
+      labelsRef.current?.bringToFront()
+    } else {
+      onOverlayLoadingChange?.(false)
+    }
+    // onOverlayLoadingChange is intentionally not a dependency: callers pass an inline
+    // arrow, so including it would tear down and rebuild the layer on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayUrl])
 
   useEffect(() => {
     const map = mapRef.current

@@ -272,7 +272,7 @@
   },
   "fieldView": {
     "title": "Field View (Satellite)",
-    "subtitle": "See your field from above and open it in Google Maps or Google Earth",
+    "subtitle": "See your field from above, and how your crop is doing",
     "useMyLocation": "Use my location",
     "showLabels": "Show names",
     "hideLabels": "Hide names",
@@ -293,7 +293,33 @@
     "geoUnsupported": "This device does not support location",
     "geoDenied": "Could not get your location",
     "viewFromSatellite": "View from satellite",
-    "imageryNote": "Satellite imagery is from Esri and partners. Pictures are usually a few months to a couple of years old, so recent changes to your field may not appear yet."
+    "imageryNote": "Satellite imagery is from Esri and partners. Pictures are usually a few months to a couple of years old, so recent changes to your field may not appear yet.",
+    "imageDate": "Which day you are seeing",
+    "sharpView": "Sharpest view",
+    "sharpViewHint": "Detailed, but undated",
+    "today": "today",
+    "daysAgo": "{{n}} days ago",
+    "showingPass": "Showing the satellite pass of {{date}} ({{days}} days ago)",
+    "dateExplainer": "The sharpest view has the most detail but no date — it can be months or years old. The dated passes are from a satellite that flies over every few days, so they show your field close to how it looks now, just less sharp.",
+    "noScenes": "No recent satellite pass found for this spot.",
+    "cropHealth": "Crop vigour right now",
+    "trend": "Recent weeks",
+    "ndviExplainer": "Measured from satellite light readings averaged over about {{m}} m around your pin. Days when cloud covered your field are skipped rather than guessed. This is a guide, not a substitute for walking the field.",
+    "ndvi": {
+      "bare": "Bare ground",
+      "sparse": "Very sparse",
+      "growing": "Growing",
+      "healthy": "Healthy",
+      "dense": "Dense and vigorous"
+    },
+    "ndviAdvice": {
+      "bare": "Almost no green growth here. Normal just after ploughing or harvest — but if a crop is standing, check water and root health urgently.",
+      "sparse": "Thin growth. Expected soon after sowing. If your crop is older than that, look at water, nutrients and pest damage.",
+      "growing": "The crop is coming along normally. Keep to your usual watering and feeding.",
+      "healthy": "Good, healthy growth across the field. Carry on as you are.",
+      "dense": "Very dense, vigorous growth — the crop is doing well."
+    },
+    "loadingImagery": "Loading that day’s image… this can take a few seconds"
   },
   "farmRecord": {
     "title": "Farm Activity Record",
