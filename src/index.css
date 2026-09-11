@@ -10,11 +10,25 @@
      --font-sans so Indian-script text never falls back to a Latin-only face. */
   --font-display: "Space Grotesk", "Manrope", ui-sans-serif, system-ui, sans-serif;
 
-  /* Lime accent from the landing design. The gold scale stays — it is the logo's
-     stroke colour and the brand mark must not drift again. */
-  --color-lime-400: #d9f0a8;
-  --color-lime-500: #c6e68a;
-  --color-lime-300: #e6f7c6;
+  /* "Organic" design-system accents. Sage carries the interface; terracotta is
+     the single warm accent for primary actions. The gold scale stays — it is the
+     logo's stroke colour and the brand mark must not drift again. */
+  --color-sage-100: #f0fae1;
+  --color-sage-200: #e1eecc;
+  --color-sage-300: #ccdbb2;
+  --color-sage-400: #aebf92;
+  --color-sage-500: #8fa073;
+  --color-sage-600: #728157;
+  --color-sage-700: #56633f;
+  --color-sage-800: #3d472b;
+  --color-sage-900: #272e1b;
+
+  --color-clay-200: #ffe1d0;
+  --color-clay-300: #ffc6a5;
+  --color-clay-400: #f6a06b;
+  --color-clay-500: #d67f48;
+  --color-clay-600: #b2622d;
+  --color-clay-700: #8c491a;
 
   /* Brand palette: deep green / natural green / golden yellow */
   --color-brand-950: #0a2015;
@@ -107,14 +121,16 @@
 }
 
 :root {
-  --bg: #f7f9f5;
-  --bg-elevated: #ffffff;
-  --surface: #ffffff;
-  --surface-muted: #eef4ec;
-  --text: #16241a;
-  --text-muted: #4d5c50;
-  --border: #dfe8dc;
-  --ring: #2d7a46;
+  --bg: #f5ead8;
+  --bg-elevated: #faf4e9;
+  --surface: #ebddc5;
+  --surface-muted: #e2d2b8;
+  --text: #201e1d;
+  --text-muted: #6b645c;
+  --border: #d8c9ae;
+  --ring: #c67139;
+  --accent: #c67139;
+  --accent-contrast: #f5ead8;
 
   /* Logo mark. The artwork's deepest green is built for white paper; on the dark
      theme it would sit almost invisibly against the ground, so these two tones
@@ -126,14 +142,16 @@
 /* Retuned to the Agro AI Landing design so the signed-in app and the landing page
    read as one product rather than two. Light mode is unchanged. */
 .dark {
-  --bg: #0e1c14;
-  --bg-elevated: #102518;
-  --surface: #16311f;
-  --surface-muted: #1c3a26;
-  --text: #eaf3ea;
-  --text-muted: #9fc19f;
-  --border: #26412e;
-  --ring: #d9f0a8;
+  --bg: #0e1a10;
+  --bg-elevated: #132016;
+  --surface: #16251a;
+  --surface-muted: #1c2a1a;
+  --text: #f2ecdc;
+  --text-muted: #a8b79b;
+  --border: #2b3d27;
+  --ring: #ccdbb2;
+  --accent: #ccdbb2;
+  --accent-contrast: #16251a;
   --mark-deep: #3E9142;
   --mark-circuit: #6ABF69;
 }
@@ -155,15 +173,17 @@ body {
 }
 
 ::selection {
-  background: var(--color-brand-300);
-  color: var(--color-brand-950);
+  background: var(--color-sage-300);
+  color: var(--color-sage-900);
 }
 
 /* Reusable surface utilities */
+/* The Organic system rounds hard: cards ~32px, every small control a full pill.
+   That shape is the most recognisable part of the look, more than the colour. */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 1rem;
+  border-radius: 2rem;
   box-shadow: 0 1px 2px rgba(15, 46, 28, 0.04), 0 8px 24px -12px rgba(15, 46, 28, 0.08);
 }
 

@@ -13,10 +13,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<Variant, string> = {
+  // Primary is the Organic system's single warm accent, and it carries the
+  // theme's own contrast colour so it stays readable on both grounds.
   primary:
-    'bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 shadow-sm disabled:hover:bg-brand-600',
+    'bg-[var(--accent)] text-[var(--accent-contrast)] shadow-sm hover:brightness-95 active:brightness-90',
   secondary:
-    'bg-gold-400 text-brand-950 hover:bg-gold-500 active:bg-gold-600 shadow-sm disabled:hover:bg-gold-400',
+    'bg-sage-300 text-sage-900 hover:bg-sage-400 active:bg-sage-500 shadow-sm disabled:hover:bg-sage-300',
   outline:
     'border border-[var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--surface-muted)]',
   ghost: 'bg-transparent text-[var(--text)] hover:bg-[var(--surface-muted)]',
@@ -24,9 +26,9 @@ const variantClasses: Record<Variant, string> = {
 }
 
 const sizeClasses: Record<Size, string> = {
-  sm: 'text-sm h-9 px-3 gap-1.5 rounded-lg',
-  md: 'text-sm h-11 px-4 gap-2 rounded-xl',
-  lg: 'text-base h-13 px-6 gap-2 rounded-xl',
+  sm: 'text-sm h-9 px-4 gap-1.5 rounded-full',
+  md: 'text-sm h-11 px-5 gap-2 rounded-full',
+  lg: 'text-base h-13 px-7 gap-2 rounded-full',
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

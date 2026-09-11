@@ -23,7 +23,7 @@ export function Sidebar() {
               clsx(
                 'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-brand-600 text-white shadow-sm'
+                  ? 'bg-[var(--accent)] text-[var(--accent-contrast)] shadow-sm'
                   : 'text-[var(--text-muted)] hover:bg-[var(--surface-muted)] hover:text-[var(--text)]'
               )
             }

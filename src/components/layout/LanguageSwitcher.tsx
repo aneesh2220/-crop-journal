@@ -32,7 +32,7 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface-muted)]"
       >
-        <Languages size={16} className="text-brand-600" />
+        <Languages size={16} className="text-[var(--accent)]" />
         {!compact && <span className="max-w-[7rem] truncate">{current.nativeName}</span>}
         <ChevronDown size={14} className={compact ? '' : 'text-[var(--text-muted)]'} />
       </button>
@@ -49,7 +49,7 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
                 <span className="text-[var(--text)]">{lang.nativeName}</span>
                 <span className="text-xs text-[var(--text-muted)]">{lang.name}</span>
               </span>
-              {lang.code === current.code && <Check size={16} className="text-brand-600" />}
+              {lang.code === current.code && <Check size={16} className="text-[var(--accent)]" />}
             </button>
           ))}
         </div>

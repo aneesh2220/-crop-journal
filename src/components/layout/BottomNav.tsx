@@ -41,7 +41,7 @@ export function BottomNav() {
                 className={({ isActive }) =>
                   clsx(
                     'flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-xs font-medium transition-colors',
-                    isActive ? 'bg-brand-600 text-white' : 'bg-[var(--surface-muted)] text-[var(--text)]'
+                    isActive ? 'bg-[var(--accent)] text-[var(--accent-contrast)]' : 'bg-[var(--surface-muted)] text-[var(--text)]'
                   )
                 }
               >
@@ -61,7 +61,7 @@ export function BottomNav() {
             className={({ isActive }) =>
               clsx(
                 'flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition-colors',
-                isActive ? 'text-brand-600' : 'text-[var(--text-muted)]'
+                isActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'
               )
             }
           >
@@ -73,7 +73,7 @@ export function BottomNav() {
           onClick={() => setMoreOpen(true)}
           className={clsx(
             'flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition-colors',
-            restActive ? 'text-brand-600' : 'text-[var(--text-muted)]'
+            restActive ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'
           )}
         >
           <Menu size={20} />

@@ -52,7 +52,7 @@ export function TopBar() {
         <div className="relative" ref={ref}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-bold text-[var(--accent-contrast)]"
           >
             {initial}
           </button>
@@ -67,7 +67,7 @@ export function TopBar() {
                     setMenuOpen(false)
                     navigate('/signup')
                   }}
-                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-brand-600 hover:bg-[var(--surface-muted)]"
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-[var(--accent)] hover:bg-[var(--surface-muted)]"
                 >
                   <UserPlus size={16} /> {t('auth.createAccount')}
                 </button>

@@ -28,8 +28,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={clsx(
-              'w-full h-12 rounded-xl border bg-[var(--surface)] px-4 text-[15px] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-transparent',
-              icon && 'pl-11',
+              'w-full h-12 rounded-full border bg-[var(--surface)] px-5 text-[15px] text-[var(--text)] placeholder:text-[var(--text-muted)] transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-transparent',
+              icon && 'pl-12',
               endAdornment && 'pr-11',
               error ? 'border-red-400' : 'border-[var(--border)]',
               inputClassName
