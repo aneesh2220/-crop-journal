@@ -6,6 +6,7 @@ import { ProtectedRoute, PublicOnlyRoute, RequireFullAccount } from '@/component
 import { AppShell } from '@/components/layout/AppShell'
 import { LoadingState } from '@/components/ui/States'
 
+const Landing = lazy(() => import('@/pages/Landing'))
 const About = lazy(() => import('@/pages/About'))
 const Login = lazy(() => import('@/pages/auth/Login'))
 const Signup = lazy(() => import('@/pages/auth/Signup'))
@@ -43,6 +44,22 @@ function IndexRedirect() {
   return <Navigate to={isGuest ? '/chat' : '/dashboard'} replace />
 }
 
+/**
+ * `/` is the marketing landing page for anyone signed out, and a shortcut into the
+ * app for anyone signed in. Previously it redirected straight to /login, which meant
+ * a first-time visitor — and Googlebot — met a password form instead of an
+ * explanation of what AgroAI is.
+ */
+function RootRoute() {
+  const { session, loading, configured, isGuest } = useAuth()
+  if (!configured) return <Landing />
+  // Render the landing page while auth resolves rather than flashing a spinner:
+  // it is the correct destination for most first-time visitors anyway.
+  if (loading) return <Landing />
+  if (!session) return <Landing />
+  return <Navigate to={isGuest ? '/chat' : '/dashboard'} replace />
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -51,7 +68,8 @@ export default function App() {
           <Suspense fallback={<PageFallback />}>
             <Routes>
               {/* Fully public — no auth gate at all, so search engines and first-time
-                  visitors can read it without hitting the /login redirect. */}
+                  visitors can read these without hitting the /login redirect. */}
+              <Route path="/" element={<RootRoute />} />
               <Route path="/about" element={<About />} />
 
               <Route element={<PublicOnlyRoute />}>
@@ -63,7 +81,7 @@ export default function App() {
 
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell />}>
-                  <Route index element={<IndexRedirect />} />
+                  <Route path="/app" element={<IndexRedirect />} />
                   {/* Open to guests — stateless AI tools and reference data, no persistent farm needed */}
                   <Route path="/chat" element={<ChatAssistant />} />
                   <Route path="/crop-doctor" element={<CropDoctor />} />
