@@ -115,6 +115,12 @@
   --text-muted: #4d5c50;
   --border: #dfe8dc;
   --ring: #2d7a46;
+
+  /* Logo mark. The artwork's deepest green is built for white paper; on the dark
+     theme it would sit almost invisibly against the ground, so these two tones
+     lighten below rather than shipping a second copy of the logo. */
+  --mark-deep: #1B5E20;
+  --mark-circuit: #2E7D32;
 }
 
 /* Retuned to the Agro AI Landing design so the signed-in app and the landing page
@@ -128,6 +134,8 @@
   --text-muted: #9fc19f;
   --border: #26412e;
   --ring: #d9f0a8;
+  --mark-deep: #3E9142;
+  --mark-circuit: #6ABF69;
 }
 
 * {

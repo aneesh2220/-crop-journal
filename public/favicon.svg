@@ -1,11 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1a4d2e"/>
-      <stop offset="100%" stop-color="#0f3020"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
-  <path d="M18 42c0-14 10-24 26-24 0 16-10 26-26 26z" fill="#4a9c60"/>
-  <path d="M18 44c8-8 14-14 26-26" stroke="#e0a527" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <style>
+    .deep { fill: #1B5E20 }
+    .circuit { fill: #2E7D32 }
+    .circuit-s { stroke: #2E7D32 }
+    /* Browser tab strips are often dark; the deepest green would disappear there. */
+    @media (prefers-color-scheme: dark) {
+      .deep { fill: #3E9142 }
+      .circuit { fill: #6ABF69 }
+      .circuit-s { stroke: #6ABF69 }
+    }
+  </style>
+  <circle cx="52" cy="12" r="6" fill="#FFB81C"/>
+  <g class="circuit-s" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M38 24 H45 L49 20 H55"/><path d="M40 30 H48 L52 26 H58"/>
+  </g>
+  <g class="circuit"><circle cx="56.6" cy="20" r="2.6"/><circle cx="59.4" cy="26" r="2.6"/></g>
+  <path class="circuit" d="M27 35 C25 24 21 18 14 14 C12.5 24.5 16.5 32.5 27 35 Z"/>
+  <path d="M29 35 C30 23 34.5 16 41 13 C43 24 38 33 29 35 Z" fill="#4CAF50"/>
+  <path d="M29.5 35 C28.8 26.5 30.2 20 34 15.5" stroke="#F1F8E9" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path class="deep" d="M5 34 C5 46.6 15.3 57 28 57 C40.7 57 51 46.6 51 34 Z"/>
+  <path d="M7 37 C14.5 51 33 54.5 47.5 43.5 C39 35.5 21 33 7 37 Z" fill="#66BB6A"/>
+  <path d="M7.5 41 C16.5 50.5 31.5 52 43.5 44.5" stroke="#F1F8E9" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+  <path d="M12 47.5 C19 53 29 54 38 50" stroke="#8BC34A" stroke-width="2.1" fill="none" stroke-linecap="round"/>
 </svg>

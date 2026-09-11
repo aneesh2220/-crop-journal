@@ -1,17 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1a4d2e"/>
-      <stop offset="100%" stop-color="#0f3020"/>
-    </linearGradient>
-  </defs>
-  <g transform="translate(60 60)">
-    <rect width="360" height="360" rx="79" fill="url(#bg)"/>
-    <g transform="scale(5.625)">
-      <path d="M18 42c0-14 10-24 26-24 0 16-10 26-26 26z" fill="#4a9c60"/>
-      <path d="M18 44c8-8 14-14 26-26" stroke="#e0a527" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="620" viewBox="0 0 1400 620" font-family="Verdana, DejaVu Sans, Segoe UI, sans-serif">
+  <g transform="translate(535 20) scale(5.1)">
+    <circle cx="52" cy="12" r="6" fill="#FFB81C"/>
+    <g stroke="#2E7D32" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M38 24 H45 L49 20 H55"/><path d="M40 30 H48 L52 26 H58"/>
     </g>
+    <g fill="#2E7D32"><circle cx="56.6" cy="20" r="2.6"/><circle cx="59.4" cy="26" r="2.6"/></g>
+    <path d="M27 35 C25 24 21 18 14 14 C12.5 24.5 16.5 32.5 27 35 Z" fill="#2E7D32"/>
+    <path d="M29 35 C30 23 34.5 16 41 13 C43 24 38 33 29 35 Z" fill="#4CAF50"/>
+    <path d="M29.5 35 C28.8 26.5 30.2 20 34 15.5" stroke="#F1F8E9" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <path d="M5 34 C5 46.6 15.3 57 28 57 C40.7 57 51 46.6 51 34 Z" fill="#1B5E20"/>
+    <path d="M7 37 C14.5 51 33 54.5 47.5 43.5 C39 35.5 21 33 7 37 Z" fill="#66BB6A"/>
+    <path d="M7.5 41 C16.5 50.5 31.5 52 43.5 44.5" stroke="#F1F8E9" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+    <path d="M12 47.5 C19 53 29 54 38 50" stroke="#8BC34A" stroke-width="2.1" fill="none" stroke-linecap="round"/>
   </g>
-  <text x="490" y="243" fill="#0f3020" font-size="150" font-weight="700">AgroAI</text>
-  <text x="493" y="330" fill="#4a9c60" font-size="52" font-weight="500">Your smart farming companion</text>
+  <text x="700" y="500" text-anchor="middle" font-size="132" font-weight="700" letter-spacing="-2">
+    <tspan fill="#1B5E20">Agro</tspan><tspan fill="#4CAF50">AI</tspan>
+  </text>
+  <text x="700" y="565" text-anchor="middle" font-size="40" font-weight="600" fill="#2E7D32" letter-spacing="0.5">Smarter Farming. Better Tomorrow.</text>
+  <path d="M470 590 C640 601 760 601 930 590" stroke="#4CAF50" stroke-width="7" fill="none" stroke-linecap="round"/>
 </svg>
