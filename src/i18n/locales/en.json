@@ -119,7 +119,22 @@
     "causes": "Likely causes",
     "treatment": "Treatment guidance",
     "prevention": "Prevention tips",
-    "severity": "Severity"
+    "severity": "Severity",
+    "confidence": "Confidence",
+    "scanAnother": "Scan another",
+    "symptomsPlaceholder": "e.g. Yellow spots on the leaves, wilting for 3 days",
+    "emptyHint": "Add a photo of the affected plant, or describe what you are seeing, and the diagnosis will appear here.",
+    "severityLevel": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "severityNote": {
+      "low": "Caught early. Act this week and the crop should recover fully.",
+      "medium": "Spreading. Treat in the next day or two before it reaches the rest of the field.",
+      "high": "Serious. Treat today, and speak to your KVK or extension officer as well."
+    },
+    "disclaimer": "AI guidance, not a prescription. Before spraying any chemical, confirm the product and dose with your local Krishi Vigyan Kendra or agricultural extension officer."
   },
   "soilHealth": {
     "title": "Soil Health Analyzer",
