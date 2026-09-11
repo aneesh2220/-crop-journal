@@ -11,4 +11,10 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
     },
   },
+  server: {
+    // Vite ignores PORT and always defaults to 5173, so two dev servers on one
+    // machine silently land on different ports than whatever started them expects.
+    // Honouring PORT lets the caller decide, while keeping 5173 as the default.
+    port: Number(process.env.PORT) || 5173,
+  },
 })
