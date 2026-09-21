@@ -13,6 +13,8 @@ configured yet shows an honest "not connected" state instead of fake numbers.
 
 ---
 
+> **New to the project?** Follow [SETUP.md](SETUP.md) to get running locally.
+
 ## 1. Prerequisites
 
 - Node.js 18+
