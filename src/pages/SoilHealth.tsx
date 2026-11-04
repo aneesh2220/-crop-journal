@@ -11,6 +11,18 @@ import { useAuth } from '@/contexts/AuthContext'
 import { analyzeSoil, AiNotConfiguredError, type SoilHealthResult } from '@/lib/ai'
 import { supabase } from '@/lib/supabase'
 import { uploadToBucket } from '@/lib/storage'
+import { makeThumbnail } from '@/lib/thumbnail'
+import { useToolHistory } from '@/hooks/useToolHistory'
+import { ToolHistory } from '@/components/ToolHistory'
+
+interface SoilInput {
+  ph?: number
+  nitrogen?: number
+  phosphorus?: number
+  potassium?: number
+  texture?: string
+  hadPhoto: boolean
+}
 
 const TEXTURES = ['Sandy', 'Clay', 'Loamy', 'Silty', 'Peaty', 'Chalky']
 
@@ -28,6 +40,7 @@ export default function SoilHealth() {
   const [notConnected, setNotConnected] = useState(false)
   const [result, setResult] = useState<SoilHealthResult | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const history = useToolHistory<SoilInput, SoilHealthResult>('soil-health')
 
   const pickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -61,6 +74,9 @@ export default function SoilHealth() {
       const analysis = await analyzeSoil(i18n.language, context, imageBase64)
       setResult(analysis)
 
+      const thumb = image ? await makeThumbnail(image.file) : null
+      history.add({ input: { ...context, hadPhoto: !!image }, result: analysis, thumb: thumb ?? undefined })
+
       if (user) {
         const imagePath = image ? await uploadToBucket('soil-images', user.id, image.file) : null
         await supabase.from('soil_analyses').insert({
@@ -83,6 +99,20 @@ export default function SoilHealth() {
   }
 
   const hasInput = image || ph || nitrogen || phosphorus || potassium || texture
+
+  // Only a thumbnail of the photo is kept, so reusing an entry restores the typed values.
+  const reuse = (entry: { input: SoilInput }) => {
+    const i = entry.input
+    setResult(null)
+    setError(null)
+    setImage(null)
+    setPh(i.ph != null ? String(i.ph) : '')
+    setNitrogen(i.nitrogen != null ? String(i.nitrogen) : '')
+    setPhosphorus(i.phosphorus != null ? String(i.phosphorus) : '')
+    setPotassium(i.potassium != null ? String(i.potassium) : '')
+    setTexture(i.texture ?? '')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   return (
     <div>
@@ -152,38 +182,7 @@ export default function SoilHealth() {
             </Card>
           ) : result ? (
             <div className="space-y-4 animate-slide-up">
-              <Card>
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
-                    <Gauge size={16} /> {t('soilHealth.insights')}
-                  </h3>
-                  <span className="rounded-full bg-brand-100 px-3 py-1 text-sm font-bold text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">
-                    {result.health_score}/100
-                  </span>
-                </div>
-                <p className="text-sm leading-relaxed text-[var(--text)]">{result.summary}</p>
-              </Card>
-              <Card>
-                <h3 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">{t('cropDoctor.treatment')}</h3>
-                <ul className="space-y-2">
-                  {result.recommendations.map((r, i) => (
-                    <li key={i} className="flex items-start gap-2.5 text-sm text-[var(--text)]">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
-                      {r}
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-              <Card>
-                <h3 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">{t('cropSuggestions.title')}</h3>
-                <div className="flex flex-wrap gap-2">
-                  {result.suitable_crops.map((c) => (
-                    <span key={c} className="rounded-full bg-gold-100 px-3 py-1.5 text-sm font-medium text-gold-700 dark:bg-gold-900/30 dark:text-gold-300">
-                      {c}
-                    </span>
-                  ))}
-                </div>
-              </Card>
+              <SoilResultView result={result} />
             </div>
           ) : (
             <Card className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -193,6 +192,73 @@ export default function SoilHealth() {
           )}
         </div>
       </div>
+
+      <ToolHistory
+        entries={history.entries}
+        onRemove={history.remove}
+        onClear={history.clear}
+        onReuse={reuse}
+        title={(e) => `${t('soilHealth.insights')}: ${e.result.health_score}/100`}
+        subtitle={(e) => describeSoilInput(e.input, t('history.withPhoto'))}
+        renderDetail={(e) => (
+          <div className="space-y-4">
+            <SoilResultView result={e.result} />
+          </div>
+        )}
+      />
     </div>
+  )
+}
+
+function describeSoilInput(i: SoilInput, photoLabel: string) {
+  const parts = [
+    i.hadPhoto ? photoLabel : null,
+    i.ph != null ? `pH ${i.ph}` : null,
+    i.nitrogen != null ? `N ${i.nitrogen}` : null,
+    i.phosphorus != null ? `P ${i.phosphorus}` : null,
+    i.potassium != null ? `K ${i.potassium}` : null,
+    i.texture ?? null,
+  ].filter(Boolean)
+  return parts.join(' · ') || '—'
+}
+
+/** The health report cards: shared by the live result and history. */
+function SoilResultView({ result }: { result: SoilHealthResult }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
+            <Gauge size={16} /> {t('soilHealth.insights')}
+          </h3>
+          <span className="rounded-full bg-brand-100 px-3 py-1 text-sm font-bold text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">
+            {result.health_score}/100
+          </span>
+        </div>
+        <p className="text-sm leading-relaxed text-[var(--text)]">{result.summary}</p>
+      </Card>
+      <Card>
+        <h3 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">{t('cropDoctor.treatment')}</h3>
+        <ul className="space-y-2">
+          {result.recommendations.map((r, i) => (
+            <li key={i} className="flex items-start gap-2.5 text-sm text-[var(--text)]">
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+              {r}
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <Card>
+        <h3 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">{t('cropSuggestions.title')}</h3>
+        <div className="flex flex-wrap gap-2">
+          {result.suitable_crops.map((c) => (
+            <span key={c} className="rounded-full bg-gold-100 px-3 py-1.5 text-sm font-medium text-gold-700 dark:bg-gold-900/30 dark:text-gold-300">
+              {c}
+            </span>
+          ))}
+        </div>
+      </Card>
+    </>
   )
 }

@@ -9,6 +9,14 @@ import { useAuth } from '@/contexts/AuthContext'
 import { diagnoseCrop, AiNotConfiguredError, type CropDoctorResult } from '@/lib/ai'
 import { supabase } from '@/lib/supabase'
 import { uploadToBucket } from '@/lib/storage'
+import { makeThumbnail } from '@/lib/thumbnail'
+import { useToolHistory } from '@/hooks/useToolHistory'
+import { ToolHistory } from '@/components/ToolHistory'
+
+interface CropDoctorInput {
+  symptoms: string
+  hadPhoto: boolean
+}
 
 /**
  * Laid out per the AgroAI App v2 design: a photo-led hero card on the left with a
@@ -39,6 +47,7 @@ export default function CropDoctor() {
   const [result, setResult] = useState<CropDoctorResult | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const history = useToolHistory<CropDoctorInput, CropDoctorResult>('crop-doctor')
 
   const pickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -66,6 +75,9 @@ export default function CropDoctor() {
       const diagnosis = await diagnoseCrop(symptoms, i18n.language, imageBase64)
       setResult(diagnosis)
 
+      const thumb = image ? await makeThumbnail(image.file) : null
+      history.add({ input: { symptoms, hadPhoto: !!image }, result: diagnosis, thumb: thumb ?? undefined })
+
       if (user) {
         const imagePath = image ? await uploadToBucket('crop-images', user.id, image.file) : null
         await supabase.from('crop_diagnoses').insert({
@@ -90,7 +102,15 @@ export default function CropDoctor() {
     setSymptoms('')
   }
 
-  const severity = result ? SEVERITY_METER[result.severity] : null
+  // A photo can't be restored from history (only a thumbnail is kept), so reusing an
+  // entry puts back the symptoms text and clears the form for a fresh photo.
+  const reuse = (entry: { input: CropDoctorInput }) => {
+    setResult(null)
+    setError(null)
+    setImage(null)
+    setSymptoms(entry.input.symptoms)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   return (
     <div>
@@ -189,30 +209,9 @@ export default function CropDoctor() {
               <SkeletonRow />
               <SkeletonRow />
             </>
-          ) : result && severity ? (
+          ) : result ? (
             <div className="flex flex-col gap-4 animate-slide-up">
-              <Card className="flex flex-col gap-2">
-                <div className="flex items-baseline gap-3">
-                  <span className="mr-auto font-display text-[17px] text-[var(--text)]">
-                    {t('cropDoctor.severity')}
-                  </span>
-                  <span className="text-[12.5px] font-medium" style={{ color: severity.color }}>
-                    {t(`cropDoctor.severityLevel.${severity.key}`)}
-                  </span>
-                </div>
-                <Meter pct={severity.pct} color={severity.color} />
-                <p className="text-[13.5px] leading-snug text-[var(--text-muted)]">
-                  {t(`cropDoctor.severityNote.${severity.key}`)}
-                </p>
-              </Card>
-
-              <FindingCard icon={<Search size={15} />} title={t('cropDoctor.causes')} items={result.causes} />
-              <FindingCard icon={<Sprout size={15} />} title={t('cropDoctor.treatment')} items={result.treatment} />
-              <FindingCard icon={<ShieldCheck size={15} />} title={t('cropDoctor.prevention')} items={result.prevention} />
-
-              <p className="px-1 text-xs leading-relaxed text-[var(--text-muted)]">
-                {t('cropDoctor.disclaimer')}
-              </p>
+              <CropDoctorFindings result={result} />
             </div>
           ) : (
             <Card className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -224,7 +223,55 @@ export default function CropDoctor() {
           )}
         </div>
       </div>
+
+      <ToolHistory
+        entries={history.entries}
+        onRemove={history.remove}
+        onClear={history.clear}
+        onReuse={reuse}
+        title={(e) => e.result.problem}
+        subtitle={(e) => [e.input.hadPhoto ? t('history.withPhoto') : null, e.input.symptoms].filter(Boolean).join(' · ') || '—'}
+        renderDetail={(e) => (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <span className="self-start rounded-full bg-[var(--accent)]/16 px-3 py-1 text-xs font-semibold text-[var(--accent)]">
+                {t('cropDoctor.confidence')} {Math.round(e.result.confidence * 100)}%
+              </span>
+              <h3 className="font-display text-xl leading-tight text-[var(--text)]">{e.result.problem}</h3>
+            </div>
+            <CropDoctorFindings result={e.result} />
+          </div>
+        )}
+      />
     </div>
+  )
+}
+
+/** Severity meter, the three finding lists and the disclaimer: shared by the live result and history. */
+function CropDoctorFindings({ result }: { result: CropDoctorResult }) {
+  const { t } = useTranslation()
+  const severity = SEVERITY_METER[result.severity] ?? null
+  return (
+    <>
+      {severity && (
+        <Card className="flex flex-col gap-2">
+          <div className="flex items-baseline gap-3">
+            <span className="mr-auto font-display text-[17px] text-[var(--text)]">{t('cropDoctor.severity')}</span>
+            <span className="text-[12.5px] font-medium" style={{ color: severity.color }}>
+              {t(`cropDoctor.severityLevel.${severity.key}`)}
+            </span>
+          </div>
+          <Meter pct={severity.pct} color={severity.color} />
+          <p className="text-[13.5px] leading-snug text-[var(--text-muted)]">{t(`cropDoctor.severityNote.${severity.key}`)}</p>
+        </Card>
+      )}
+
+      <FindingCard icon={<Search size={15} />} title={t('cropDoctor.causes')} items={result.causes} />
+      <FindingCard icon={<Sprout size={15} />} title={t('cropDoctor.treatment')} items={result.treatment} />
+      <FindingCard icon={<ShieldCheck size={15} />} title={t('cropDoctor.prevention')} items={result.prevention} />
+
+      <p className="px-1 text-xs leading-relaxed text-[var(--text-muted)]">{t('cropDoctor.disclaimer')}</p>
+    </>
   )
 }
 

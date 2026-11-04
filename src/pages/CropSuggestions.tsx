@@ -9,6 +9,16 @@ import { NotConnectedState, ErrorState } from '@/components/ui/States'
 import { Spinner } from '@/components/ui/Spinner'
 import { useAuth } from '@/contexts/AuthContext'
 import { suggestCrops, AiNotConfiguredError, type CropSuggestionResult } from '@/lib/ai'
+import { useToolHistory } from '@/hooks/useToolHistory'
+import { ToolHistory } from '@/components/ToolHistory'
+
+interface SuggestionInput {
+  location: string
+  soilType: string
+  season: string
+  water: string
+  needs: string
+}
 
 const SEASONS = ['Kharif (Monsoon)', 'Rabi (Winter)', 'Zaid (Summer)']
 const WATER_LEVELS = ['Low / rain-fed', 'Medium', 'High / well irrigated']
@@ -25,6 +35,19 @@ export default function CropSuggestions() {
   const [error, setError] = useState<string | null>(null)
   const [notConnected, setNotConnected] = useState(false)
   const [result, setResult] = useState<CropSuggestionResult | null>(null)
+  const history = useToolHistory<SuggestionInput, CropSuggestionResult>('crop-suggestions')
+
+  const reuse = (entry: { input: SuggestionInput }) => {
+    const i = entry.input
+    setResult(null)
+    setError(null)
+    setLocation(i.location)
+    setSoilType(i.soilType)
+    setSeason(i.season)
+    setWater(i.water)
+    setNeeds(i.needs)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const handleSubmit = async () => {
     setLoading(true)
@@ -32,8 +55,10 @@ export default function CropSuggestions() {
     setNotConnected(false)
     setResult(null)
     try {
-      const res = await suggestCrops(i18n.language, { location, soilType, season, water, needs })
+      const input = { location, soilType, season, water, needs }
+      const res = await suggestCrops(i18n.language, input)
       setResult(res)
+      history.add({ input, result: res })
     } catch (err) {
       if (err instanceof AiNotConfiguredError) setNotConnected(true)
       else setError(err instanceof Error ? err.message : t('common.error'))
@@ -82,17 +107,7 @@ export default function CropSuggestions() {
             </Card>
           ) : result ? (
             <div className="space-y-3 animate-slide-up">
-              {result.crops.map((crop) => (
-                <Card key={crop.name}>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <h3 className="text-base font-bold text-[var(--text)]">{crop.name}</h3>
-                    <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-bold text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">
-                      {crop.suitability}%
-                    </span>
-                  </div>
-                  <p className="text-sm text-[var(--text-muted)]">{crop.reason}</p>
-                </Card>
-              ))}
+              <SuggestionResultView result={result} />
             </div>
           ) : (
             <Card className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -102,7 +117,45 @@ export default function CropSuggestions() {
           )}
         </div>
       </div>
+
+      <ToolHistory
+        entries={history.entries}
+        onRemove={history.remove}
+        onClear={history.clear}
+        onReuse={reuse}
+        title={(e) =>
+          (e.result.crops ?? [])
+            .slice(0, 3)
+            .map((c) => c.name)
+            .join(', ') || '—'
+        }
+        subtitle={(e) => [e.input.location, e.input.season, e.input.soilType, e.input.water].filter(Boolean).join(' · ') || '—'}
+        renderDetail={(e) => (
+          <div className="space-y-3">
+            <SuggestionResultView result={e.result} />
+          </div>
+        )}
+      />
     </div>
+  )
+}
+
+/** The ranked crop cards: shared by the live result and history. */
+function SuggestionResultView({ result }: { result: CropSuggestionResult }) {
+  return (
+    <>
+      {result.crops.map((crop) => (
+        <Card key={crop.name}>
+          <div className="mb-1.5 flex items-center justify-between">
+            <h3 className="text-base font-bold text-[var(--text)]">{crop.name}</h3>
+            <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-bold text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">
+              {crop.suitability}%
+            </span>
+          </div>
+          <p className="text-sm text-[var(--text-muted)]">{crop.reason}</p>
+        </Card>
+      ))}
+    </>
   )
 }
 

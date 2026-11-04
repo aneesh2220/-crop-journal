@@ -10,6 +10,15 @@ import { Spinner } from '@/components/ui/Spinner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCrops } from '@/hooks/useCrops'
 import { getIrrigationAdvice, AiNotConfiguredError, type IrrigationResult } from '@/lib/ai'
+import { useToolHistory } from '@/hooks/useToolHistory'
+import { ToolHistory } from '@/components/ToolHistory'
+
+interface IrrigationInput {
+  crop: string
+  soilType: string
+  stage: string
+  weather: string
+}
 
 const STAGES = ['Preparation', 'Sowing', 'Growth', 'Flowering', 'Harvest']
 
@@ -25,6 +34,18 @@ export default function Irrigation() {
   const [error, setError] = useState<string | null>(null)
   const [notConnected, setNotConnected] = useState(false)
   const [result, setResult] = useState<IrrigationResult | null>(null)
+  const history = useToolHistory<IrrigationInput, IrrigationResult>('irrigation')
+
+  const reuse = (entry: { input: IrrigationInput }) => {
+    const i = entry.input
+    setResult(null)
+    setError(null)
+    setCrop(i.crop)
+    setSoilType(i.soilType)
+    setStage(i.stage)
+    setWeather(i.weather)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const handleSubmit = async () => {
     setLoading(true)
@@ -32,8 +53,10 @@ export default function Irrigation() {
     setNotConnected(false)
     setResult(null)
     try {
-      const res = await getIrrigationAdvice(i18n.language, { crop, soilType, stage, weather })
+      const input = { crop, soilType, stage, weather }
+      const res = await getIrrigationAdvice(i18n.language, input)
       setResult(res)
+      history.add({ input, result: res })
     } catch (err) {
       if (err instanceof AiNotConfiguredError) setNotConnected(true)
       else setError(err instanceof Error ? err.message : t('common.error'))
@@ -104,24 +127,7 @@ export default function Irrigation() {
             </Card>
           ) : result ? (
             <div className="space-y-4 animate-slide-up">
-              <Card>
-                <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
-                  <Calendar size={16} /> {t('irrigation.schedule')}
-                </h3>
-                <p className="text-sm leading-relaxed text-[var(--text)]">{result.schedule}</p>
-                <p className="mt-2 text-sm font-medium text-brand-600">{result.waterAmount}</p>
-              </Card>
-              <Card>
-                <h3 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">{t('irrigation.waterSavingTips')}</h3>
-                <ul className="space-y-2">
-                  {result.tips.map((tip, i) => (
-                    <li key={i} className="flex items-start gap-2.5 text-sm text-[var(--text)]">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
-                      {tip}
-                    </li>
-                  ))}
-                </ul>
-              </Card>
+              <IrrigationResultView result={result} />
             </div>
           ) : (
             <Card className="flex flex-col items-center justify-center gap-3 py-16 text-center">
@@ -131,6 +137,47 @@ export default function Irrigation() {
           )}
         </div>
       </div>
+
+      <ToolHistory
+        entries={history.entries}
+        onRemove={history.remove}
+        onClear={history.clear}
+        onReuse={reuse}
+        title={(e) => [e.input.crop, e.input.stage].filter(Boolean).join(' · ') || '—'}
+        subtitle={(e) => e.result.waterAmount || '—'}
+        renderDetail={(e) => (
+          <div className="space-y-4">
+            <IrrigationResultView result={e.result} />
+          </div>
+        )}
+      />
     </div>
+  )
+}
+
+/** The schedule and tips cards: shared by the live result and history. */
+function IrrigationResultView({ result }: { result: IrrigationResult }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <Card>
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--text-muted)]">
+          <Calendar size={16} /> {t('irrigation.schedule')}
+        </h3>
+        <p className="text-sm leading-relaxed text-[var(--text)]">{result.schedule}</p>
+        <p className="mt-2 text-sm font-medium text-brand-600">{result.waterAmount}</p>
+      </Card>
+      <Card>
+        <h3 className="mb-3 text-sm font-semibold text-[var(--text-muted)]">{t('irrigation.waterSavingTips')}</h3>
+        <ul className="space-y-2">
+          {result.tips.map((tip, i) => (
+            <li key={i} className="flex items-start gap-2.5 text-sm text-[var(--text)]">
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
+              {tip}
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </>
   )
 }

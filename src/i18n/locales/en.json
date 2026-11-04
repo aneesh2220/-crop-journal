@@ -372,5 +372,14 @@
     "nDaysLater": "{{n}} days later",
     "importantHeading": "Important — please read",
     "disclaimer": "This document is a record of information entered by the farmer named above, in their own words. AgroAI has not inspected this farm and does not verify, endorse, or guarantee the accuracy of these entries. This is not a credit score, a credit report, or an assessment of creditworthiness, and AgroAI is not a credit information company. Satellite imagery is supplied by third parties and may be several months to a few years old. Any lending, purchasing, or certification decision remains entirely with the reader, who should carry out their own verification."
+  },
+  "history": {
+    "title": "History",
+    "savedOnDevice": "Saved on this device only.",
+    "empty": "Nothing here yet. Your past results will appear here after you use this tool.",
+    "clear": "Clear history",
+    "clearConfirm": "Delete all history for this tool?",
+    "reuse": "Use these inputs again",
+    "withPhoto": "Photo"
   }
 }
