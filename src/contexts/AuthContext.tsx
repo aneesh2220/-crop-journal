@@ -1,7 +1,32 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { withTimeout } from '@/lib/functionsError'
 import type { Profile } from '@/lib/database.types'
+
+const AUTH_TIMEOUT_MS = 20_000
+
+/** Browsers word a dropped connection differently ("Failed to fetch" in Chrome, "Load failed" in Safari). */
+function friendlyAuthMessage(message: string): string {
+  if (/failed to fetch|load failed|networkerror|network request failed/i.test(message)) {
+    return "Can't reach AgroAI right now. Check your internet connection and try again."
+  }
+  return message
+}
+
+/**
+ * Runs one auth call so it can never leave a login button spinning forever: it is
+ * time-limited, a thrown network error becomes a message instead of an unhandled
+ * rejection, and the browser's raw "Failed to fetch" is made readable.
+ */
+async function guardedAuth(run: () => Promise<{ error: { message: string } | null }>): Promise<{ error: string | null }> {
+  try {
+    const { error } = await withTimeout(run(), AUTH_TIMEOUT_MS)
+    return { error: error ? friendlyAuthMessage(error.message) : null }
+  } catch (err) {
+    return { error: friendlyAuthMessage(err instanceof Error ? err.message : String(err)) }
+  }
+}
 
 interface AuthContextValue {
   session: Session | null
@@ -39,11 +64,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      if (data.session?.user) loadProfile(data.session.user.id)
-      setLoading(false)
-    })
+    // If this never settles (offline, slow network), carry on signed-out instead of
+    // leaving every protected page on its loading spinner; onAuthStateChange below
+    // still delivers the real session as soon as it is available.
+    withTimeout(supabase.auth.getSession(), 15_000)
+      .then(({ data }) => {
+        setSession(data.session)
+        if (data.session?.user) loadProfile(data.session.user.id)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession)
@@ -59,40 +89,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithPassword: AuthContextValue['signInWithPassword'] = async (identifier, password) => {
     const isEmail = identifier.includes('@')
-    const { error } = isEmail
-      ? await supabase.auth.signInWithPassword({ email: identifier, password })
-      : await supabase.auth.signInWithPassword({ phone: identifier, password })
-    return { error: error?.message ?? null }
+    return guardedAuth(() =>
+      isEmail
+        ? supabase.auth.signInWithPassword({ email: identifier, password })
+        : supabase.auth.signInWithPassword({ phone: identifier, password })
+    )
   }
 
-  const signUpWithEmail: AuthContextValue['signUpWithEmail'] = async (email, password, fullName) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } },
-    })
-    return { error: error?.message ?? null }
-  }
+  const signUpWithEmail: AuthContextValue['signUpWithEmail'] = async (email, password, fullName) =>
+    guardedAuth(() =>
+      supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: fullName } },
+      })
+    )
 
-  const signInWithGoogle: AuthContextValue['signInWithGoogle'] = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/dashboard` },
-    })
-    return { error: error?.message ?? null }
-  }
+  const signInWithGoogle: AuthContextValue['signInWithGoogle'] = async () =>
+    guardedAuth(() =>
+      supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/dashboard` },
+      })
+    )
 
-  const signInAsGuest: AuthContextValue['signInAsGuest'] = async () => {
-    const { error } = await supabase.auth.signInAnonymously()
-    return { error: error?.message ?? null }
-  }
+  const signInAsGuest: AuthContextValue['signInAsGuest'] = async () =>
+    guardedAuth(() => supabase.auth.signInAnonymously())
 
-  const sendPasswordReset: AuthContextValue['sendPasswordReset'] = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    })
-    return { error: error?.message ?? null }
-  }
+  const sendPasswordReset: AuthContextValue['sendPasswordReset'] = async (email) =>
+    guardedAuth(() =>
+      supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+    )
 
   const signOut = async () => {
     await supabase.auth.signOut()

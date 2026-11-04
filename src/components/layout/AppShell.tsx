@@ -9,7 +9,7 @@ export function AppShell() {
       <Sidebar />
       <div className="flex min-h-screen flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 px-4 pb-24 pt-5 sm:px-6 sm:pb-8 lg:px-8">
+        <main className="flex-1 px-4 pb-[calc(var(--bottom-nav-h,5rem)_+_1.5rem)] pt-5 sm:px-6 lg:px-8 lg:pb-8">
           <div className="mx-auto max-w-6xl">
             <Outlet />
           </div>

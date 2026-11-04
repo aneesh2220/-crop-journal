@@ -102,7 +102,11 @@ export default function ChatAssistant() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] flex-col lg:h-[calc(100vh-5.5rem)]">
+    // Below lg the fixed bottom nav is showing, so the chat must end above it: top bar
+    // (4rem) + top padding (1.25rem) + the nav's measured height (--bottom-nav-h, set by
+    // BottomNav) + a 1.5rem gap. dvh tracks the visible area on iPad/iPhone Safari, where
+    // 100vh includes the hidden browser bars.
+    <div className="flex h-[calc(100dvh_-_5.25rem_-_var(--bottom-nav-h,5rem)_-_1.5rem)] flex-col lg:h-[calc(100vh-5.5rem)]">
       <div className="flex items-start justify-between gap-3">
         <PageHeader title={t('chat.title')} subtitle={t('chat.askAnything')} />
         {messages.length > 0 && (

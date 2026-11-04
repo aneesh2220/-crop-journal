@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
@@ -9,6 +9,28 @@ export function BottomNav() {
   const { t } = useTranslation()
   const location = useLocation()
   const [moreOpen, setMoreOpen] = useState(false)
+  const navRef = useRef<HTMLElement>(null)
+
+  // Publish the nav's real height (labels, safe-area padding and all) as --bottom-nav-h
+  // so page content can stop exactly above it instead of guessing a number. A guess is
+  // what let the chat input slide under this bar on tablets.
+  useEffect(() => {
+    const el = navRef.current
+    if (!el) return
+    const root = document.documentElement
+    const publish = () => root.style.setProperty('--bottom-nav-h', `${el.getBoundingClientRect().height}px`)
+    publish()
+    const observer = new ResizeObserver(publish)
+    // border-box: the safe-area space on iPads is padding, which the default content-box
+    // observation would not report.
+    observer.observe(el, { box: 'border-box' })
+    window.addEventListener('resize', publish)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', publish)
+      root.style.removeProperty('--bottom-nav-h')
+    }
+  }, [])
 
   const primary = NAV_ITEMS.slice(0, MOBILE_PRIMARY_COUNT)
   const rest = NAV_ITEMS.slice(MOBILE_PRIMARY_COUNT)
@@ -53,7 +75,7 @@ export function BottomNav() {
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-[var(--border)] bg-[var(--bg-elevated)]/95 backdrop-blur pb-[env(safe-area-inset-bottom)] lg:hidden">
+      <nav ref={navRef} className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-[var(--border)] bg-[var(--bg-elevated)]/95 backdrop-blur pb-[env(safe-area-inset-bottom)] lg:hidden">
         {primary.map((item) => (
           <NavLink
             key={item.to}
